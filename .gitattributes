@@ -1,0 +1,13 @@
+# Normalize line endings. The bin/ scripts are shebang executables — CRLF would
+# break `#!/usr/bin/env node` on checkout, so force LF everywhere.
+* text=auto eol=lf
+
+bin/* text eol=lf
+lib/*.js text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+
+# Keep the bin/ scripts executable when checked out.
+bin/ecombrain-login  text eol=lf
+bin/ecombrain-gql    text eol=lf
+bin/ecombrain-config text eol=lf

@@ -1,0 +1,11 @@
+{
+  "name": "ecombrain",
+  "description": "Secure, read-only access to the Ecombrain Data Layer via its GraphQL API. Authenticate once with /ecombrain:login, then ask Claude data questions answered directly from your Ecombrain account.",
+  "version": "0.1.0",
+  "author": {
+    "name": "SellerPlex"
+  },
+  "homepage": "https://ecombrain.sellerplex.com",
+  "repository": "https://github.com/WeBuildAgents/ecombrain-claude-plugin",
+  "license": "LicenseRef-Proprietary"
+}
