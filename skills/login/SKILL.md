@@ -16,9 +16,17 @@ Run the login script to authenticate the user and store their Ecombrain API toke
    ```
 
 2. This opens the user's browser to the Ecombrain sign-in / token page. The user
-   logs in, creates a new API token, and confirms. The browser redirects back to
-   a temporary local callback (token in the URL fragment) and the script stores
-   the token.
+   logs in, **creates a new API token**, and confirms. The browser redirects back
+   to a temporary local callback (token in the URL fragment) and the script
+   stores the token.
+
+   The flow **only ever mints a brand-new token** — it does not list, display, or
+   let the user select their existing tokens. Ecombrain cannot re-reveal a token
+   secret after it is created, so there is nothing to pick from. Every
+   `/ecombrain:login` therefore issues an additional token on the user's account.
+   If they ask to reuse an existing token, or to see which tokens they already
+   have, tell them that is not possible from this flow and point them at the
+   Ecombrain web app to review or revoke tokens.
 
 3. Report the outcome to the user based on the script's exit status:
    - **Exit 0** — connected and verified. Tell the user they can now ask data

@@ -9,9 +9,11 @@ through a browser login. All API access uses this token; there is no MCP server.
 
 ## How it works
 
-- `/ecombrain:login` runs `ecombrain-login`, which opens the browser, lets the
-  user pick or create a token, and captures it via a temporary loopback callback
+- `/ecombrain:login` runs `ecombrain-login`, which opens the browser, has the
+  user **create a new token**, and captures it via a temporary loopback callback
   (`http://127.0.0.1:<port>/callback`) protected by a random `state` nonce.
+  Existing tokens are never listed or offered for reuse — Ecombrain cannot
+  re-reveal a token secret once created, so each login mints a new one.
 - The token is saved to `~/.config/ecombrain/credentials.json` (mode `0600`).
 - Every GraphQL request sends `Authorization: Bearer <token>`.
 
