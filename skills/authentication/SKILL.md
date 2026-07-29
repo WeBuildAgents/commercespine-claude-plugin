@@ -36,6 +36,10 @@ the user through `/ecombrain:login`.
 
 ## Configuration
 
-- Production frontend/API URLs are baked into `lib/config.js`.
-- For local development, the URLs are overridden by the `ECOMBRAIN_FRONTEND_URL`
-  and `ECOMBRAIN_API_URL` environment variables set when launching Claude.
+- The frontend/API URLs are hardcoded constants in `lib/config.js`. Every user
+  and environment talks to the same two endpoints.
+- **No environment variables are consulted for URLs**, and no URL config file is
+  read. This is deliberate: a stray or hostile env var can never redirect the
+  bearer token to another host. Do not tell the user to set an env var to change
+  an endpoint — none exists, and setting one has no effect.
+- To target a different environment, edit those two constants in a local checkout.
