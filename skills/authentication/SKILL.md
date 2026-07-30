@@ -9,9 +9,11 @@ through a browser login. All API access uses this token; there is no MCP server.
 
 ## How it works
 
-- `/ecombrain:login` runs `ecombrain-login`, which opens the browser, lets the
-  user pick or create a token, and captures it via a temporary loopback callback
+- `/ecombrain:login` runs `ecombrain-login`, which opens the browser, has the
+  user **create a new token**, and captures it via a temporary loopback callback
   (`http://127.0.0.1:<port>/callback`) protected by a random `state` nonce.
+  Existing tokens are never listed or offered for reuse — Ecombrain cannot
+  re-reveal a token secret once created, so each login mints a new one.
 - The token is saved to `~/.config/ecombrain/credentials.json` (mode `0600`).
 - Every GraphQL request sends `Authorization: Bearer <token>`.
 
@@ -36,6 +38,10 @@ the user through `/ecombrain:login`.
 
 ## Configuration
 
-- Production frontend/API URLs are baked into `lib/config.js`.
-- For local development, the URLs are overridden by the `ECOMBRAIN_FRONTEND_URL`
-  and `ECOMBRAIN_API_URL` environment variables set when launching Claude.
+- The frontend/API URLs are hardcoded constants in `lib/config.js`. Every user
+  and environment talks to the same two endpoints.
+- **No environment variables are consulted for URLs**, and no URL config file is
+  read. This is deliberate: a stray or hostile env var can never redirect the
+  bearer token to another host. Do not tell the user to set an env var to change
+  an endpoint — none exists, and setting one has no effect.
+- To target a different environment, edit those two constants in a local checkout.
