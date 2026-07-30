@@ -1,56 +1,41 @@
-#!/usr/bin/env node
-'use strict';
+#!/bin/sh
+# Dispatcher: exec the native ecombrain binary for this OS/arch.
+# The plugin's bin/ directory is placed on PATH when the plugin is enabled, so
+# these shims are what users and skills actually invoke.
+#
+# Strict POSIX sh — this must run under dash (/bin/sh on Debian/Ubuntu), not
+# just bash. No 'exec -a', no [[ ]], no arrays.
+set -eu
 
-// ecombrain-config — report the resolved configuration and token status.
-// Never prints the token itself.
-//
-// Usage:
-//   ecombrain-config            # human-readable status
-//   ecombrain-config --json     # machine-readable status
+# Resolve this script's real directory, following symlinks.
+src="$0"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
 
-const path = require('path');
-const config = require(path.join(__dirname, '..', 'lib', 'config'));
+case "$(uname -s)" in
+  Darwin) os=darwin ;;
+  Linux)  os=linux ;;
+  MINGW*|MSYS*|CYGWIN*) os=windows ;;
+  *) echo "ecombrain: unsupported operating system: $(uname -s)" >&2; exit 1 ;;
+esac
 
-function maskToken(creds) {
-  if (!creds || !creds.token) return null;
-  const t = creds.token;
-  if (t.length <= 8) return '****';
-  return `${t.slice(0, 4)}…${t.slice(-4)} (${t.length} chars)`;
-}
+case "$(uname -m)" in
+  arm64|aarch64) arch=arm64 ;;
+  x86_64|amd64)  arch=amd64 ;;
+  *) echo "ecombrain: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
 
-function main() {
-  const asJson = process.argv.includes('--json');
-  const creds = config.readCredentials();
+exe="$ROOT/libexec/ecombrain-$os-$arch"
+[ "$os" = windows ] && exe="$exe.exe"
 
-  const status = {
-    frontendUrl: config.frontendUrl(),
-    apiUrl: config.apiUrl(),
-    credentialsPath: config.credentialsPath(),
-    tokenPresent: config.hasToken(),
-    tokenPreview: maskToken(creds),
-    obtainedAt: creds && creds.obtainedAt ? creds.obtainedAt : null,
-  };
+if [ ! -x "$exe" ]; then
+  echo "ecombrain: no bundled binary for $os/$arch (looked for $exe)." >&2
+  echo "ecombrain: please report this to your Ecombrain onboarding contact." >&2
+  exit 1
+fi
 
-  if (asJson) {
-    process.stdout.write(JSON.stringify(status, null, 2) + '\n');
-    return;
-  }
-
-  const lines = [
-    'Ecombrain plugin configuration',
-    '------------------------------',
-    `Frontend URL:      ${status.frontendUrl}`,
-    `API URL:           ${status.apiUrl}`,
-    `Credentials file:  ${status.credentialsPath}`,
-    `Token present:     ${status.tokenPresent ? 'yes' : 'no'}`,
-  ];
-  if (status.tokenPresent) {
-    lines.push(`Token:             ${status.tokenPreview}`);
-    lines.push(`Obtained at:       ${status.obtainedAt || 'unknown'}`);
-  } else {
-    lines.push('Next step:         run /ecombrain:login to authenticate.');
-  }
-  process.stdout.write(lines.join('\n') + '\n');
-}
-
-main();
+exec "$exe" config "$@"

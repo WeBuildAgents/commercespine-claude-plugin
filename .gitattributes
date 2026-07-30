@@ -1,13 +1,18 @@
-# Normalize line endings. The bin/ scripts are shebang executables — CRLF would
-# break `#!/usr/bin/env node` on checkout, so force LF everywhere.
+# Normalize line endings. The bin/ shims are POSIX sh executables — CRLF would
+# break `#!/bin/sh` on checkout, so force LF everywhere by default.
 * text=auto eol=lf
 
-bin/* text eol=lf
-lib/*.js text eol=lf
-*.md text eol=lf
-*.json text eol=lf
-
-# Keep the bin/ scripts executable when checked out.
 bin/ecombrain-login  text eol=lf
 bin/ecombrain-gql    text eol=lf
 bin/ecombrain-config text eol=lf
+*.go         text eol=lf
+*.md         text eol=lf
+*.json       text eol=lf
+scripts/*.sh text eol=lf
+
+# Windows shims must keep CRLF — cmd.exe is unreliable with LF-only batch files.
+*.cmd text eol=crlf
+
+# The compiled binaries are binary. Without this, the `text=auto` heuristic above
+# could mangle them on checkout, and diffs would be unreadable noise.
+libexec/** binary

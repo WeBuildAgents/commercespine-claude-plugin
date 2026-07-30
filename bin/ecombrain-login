@@ -1,187 +1,41 @@
-#!/usr/bin/env node
-'use strict';
+#!/bin/sh
+# Dispatcher: exec the native ecombrain binary for this OS/arch.
+# The plugin's bin/ directory is placed on PATH when the plugin is enabled, so
+# these shims are what users and skills actually invoke.
+#
+# Strict POSIX sh — this must run under dash (/bin/sh on Debian/Ubuntu), not
+# just bash. No 'exec -a', no [[ ]], no arrays.
+set -eu
 
-// ecombrain-login — authenticate with Ecombrain and store a bearer token.
-//
-// Flow:
-//   1. Start a loopback-only HTTP server on an ephemeral port.
-//   2. Open the browser to the frontend /connect handoff, passing our
-//      callback_url and a random state nonce.
-//   3. The frontend (after the user logs in and creates a token) redirects
-//      back to http://127.0.0.1:<port>/callback#token=...&state=...
-//      (fragment, not query — fragments are never sent to remote servers
-//      or written to access logs / Referer).
-//   4. /callback serves a tiny page that reads location.hash and navigates
-//      to /complete?token=...&state=... on the same loopback server.
-//   5. Validate the state, save the token (0600), verify it, then exit.
+# Resolve this script's real directory, following symlinks.
+src="$0"
+while [ -h "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+ROOT="$(cd -P "$(dirname "$src")/.." && pwd)"
 
-const http = require('http');
-const crypto = require('crypto');
-const { spawn } = require('child_process');
-const path = require('path');
-const { URL } = require('url');
+case "$(uname -s)" in
+  Darwin) os=darwin ;;
+  Linux)  os=linux ;;
+  MINGW*|MSYS*|CYGWIN*) os=windows ;;
+  *) echo "ecombrain: unsupported operating system: $(uname -s)" >&2; exit 1 ;;
+esac
 
-const config = require(path.join(__dirname, '..', 'lib', 'config'));
-const gql = require(path.join(__dirname, '..', 'lib', 'graphql'));
+case "$(uname -m)" in
+  arm64|aarch64) arch=arm64 ;;
+  x86_64|amd64)  arch=amd64 ;;
+  *) echo "ecombrain: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
 
-const TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes to complete login
+exe="$ROOT/libexec/ecombrain-$os-$arch"
+[ "$os" = windows ] && exe="$exe.exe"
 
-function openBrowser(url) {
-  // Escape hatch for automated testing / headless environments.
-  if (process.env.ECOMBRAIN_NO_BROWSER) return;
-  const platform = process.platform;
-  let cmd, cmdArgs;
-  if (platform === 'darwin') {
-    cmd = 'open';
-    cmdArgs = [url];
-  } else if (platform === 'win32') {
-    cmd = 'cmd';
-    cmdArgs = ['/c', 'start', '', url];
-  } else {
-    cmd = 'xdg-open';
-    cmdArgs = [url];
-  }
-  try {
-    const child = spawn(cmd, cmdArgs, { stdio: 'ignore', detached: true });
-    child.on('error', () => {}); // handled by the manual-URL fallback below
-    child.unref();
-  } catch (_) {
-    /* fall through to manual instructions */
-  }
-}
+if [ ! -x "$exe" ]; then
+  echo "ecombrain: no bundled binary for $os/$arch (looked for $exe)." >&2
+  echo "ecombrain: please report this to your Ecombrain onboarding contact." >&2
+  exit 1
+fi
 
-function htmlResponse(res, status, title, message) {
-  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(
-    `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>` +
-      '<style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;' +
-      'padding:0 1rem;text-align:center;color:#1a1a1a}h1{font-size:1.3rem}</style></head>' +
-      `<body><h1>${title}</h1><p>${message}</p></body></html>`
-  );
-}
-
-/** Bridge page: read #token/#state (never sent over HTTP) and POST them locally. */
-function fragmentBridgeHtml() {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Connecting…</title>
-<style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;text-align:center;color:#1a1a1a}</style>
-</head><body><p>Completing Ecombrain sign-in…</p>
-<script>
-(function () {
-  try {
-    var params = new URLSearchParams(location.hash.replace(/^#/, ''));
-    var token = params.get('token');
-    var state = params.get('state');
-    if (!token || !state) {
-      document.body.innerHTML = '<h1>Authentication failed</h1><p>No token was returned. Please try again.</p>';
-      return;
-    }
-    // Move secrets into a same-origin loopback query so the Node server can read them.
-    // This never leaves 127.0.0.1.
-    location.replace('/complete?' + params.toString());
-  } catch (e) {
-    document.body.innerHTML = '<h1>Authentication failed</h1><p>Could not read the callback.</p>';
-  }
-})();
-</script></body></html>`;
-}
-
-async function main() {
-  const state = crypto.randomBytes(24).toString('hex');
-  let settled = false;
-
-  const server = http.createServer((req, res) => {
-    const reqUrl = new URL(req.url, 'http://127.0.0.1');
-
-    // First hop: browser lands on /callback#token=… — server only sees /callback.
-    if (reqUrl.pathname === '/callback') {
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(fragmentBridgeHtml());
-      return;
-    }
-
-    if (reqUrl.pathname !== '/complete') {
-      res.writeHead(404).end();
-      return;
-    }
-
-    const token = reqUrl.searchParams.get('token');
-    const returnedState = reqUrl.searchParams.get('state');
-
-    if (!returnedState || returnedState !== state) {
-      htmlResponse(res, 400, 'Authentication failed', 'State mismatch. Please run /ecombrain:login again.');
-      return; // ignore — do not settle on a bad state
-    }
-    if (!token) {
-      htmlResponse(res, 400, 'Authentication failed', 'No token was returned. Please try again.');
-      return;
-    }
-    if (settled) {
-      htmlResponse(res, 200, 'Already connected', 'You can close this tab.');
-      return;
-    }
-    settled = true;
-
-    const file = config.writeCredentials({
-      token,
-      obtainedAt: new Date().toISOString(),
-    });
-
-    htmlResponse(res, 200, 'Connected to Ecombrain', 'You can close this tab and return to Claude.');
-    // Give the response time to flush before shutting down.
-    setTimeout(() => finish({ file }), 250);
-  });
-
-  let timer;
-  function finish(result) {
-    clearTimeout(timer);
-    server.close(async () => {
-      if (result && result.error) {
-        process.stderr.write(result.error + '\n');
-        process.exit(result.code || 1);
-      }
-      process.stdout.write(`Token saved to ${result.file}\n`);
-      process.stdout.write('Verifying token...\n');
-      try {
-        await gql.execute(gql.PING_QUERY, {});
-        process.stdout.write('Success — Ecombrain is connected. You can now ask data questions.\n');
-        process.exit(0);
-      } catch (err) {
-        process.stderr.write(
-          'Token was saved but verification failed: ' + (err.message || String(err)) + '\n'
-        );
-        process.exit(2);
-      }
-    });
-  }
-
-  server.on('error', (err) => {
-    process.stderr.write(`Could not start local callback server: ${err.message}\n`);
-    process.exit(1);
-  });
-
-  // Bind to loopback only, ephemeral port.
-  server.listen(0, '127.0.0.1', () => {
-    const port = server.address().port;
-    const callbackUrl = `http://127.0.0.1:${port}/callback`;
-    const connectUrl =
-      `${config.frontendUrl()}/connect` +
-      `?callback_url=${encodeURIComponent(callbackUrl)}` +
-      `&state=${encodeURIComponent(state)}`;
-
-    process.stdout.write('Opening your browser to sign in to Ecombrain...\n');
-    process.stdout.write(
-      'If it does not open automatically, paste this URL into your browser:\n' +
-        connectUrl +
-        '\n'
-    );
-    openBrowser(connectUrl);
-
-    timer = setTimeout(() => {
-      if (!settled) {
-        finish({ error: 'Login timed out after 2 minutes. Run /ecombrain:login to try again.', code: 1 });
-      }
-    }, TIMEOUT_MS);
-  });
-}
-
-main();
+exec "$exe" login "$@"

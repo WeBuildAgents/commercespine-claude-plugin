@@ -4,14 +4,51 @@ Gives Claude secure, **read-only** access to the Ecombrain Data Layer via its
 GraphQL API. Authenticate once with `/ecombrain:login`, then ask Claude data
 questions that it answers by querying your Ecombrain account.
 
-There is **no MCP server** — all API access goes through small, zero-dependency
-Node scripts in `bin/` that use a per-user bearer token.
+There is **no MCP server** — all API access goes through a small, dependency-free
+native binary that uses a per-user bearer token.
 
 ## Requirements
 
-- Node.js 18+ (uses the built-in global `fetch`)
+- **No runtime to install.** Prebuilt native binaries ship with the plugin (see
+  [Supported platforms](#supported-platforms)).
 - A machine where Claude runs locally (Claude Desktop or Claude Code CLI) so the
   browser login and its temporary `localhost` callback work
+
+## Supported platforms
+
+`bin/` contains thin dispatch shims; `libexec/` holds one static binary per
+platform. The shim picks the right one from `uname -s`/`uname -m` (or
+`PROCESSOR_ARCHITECTURE` on Windows).
+
+| OS | Architectures | Minimum version |
+| --- | --- | --- |
+| macOS | arm64 (Apple Silicon), amd64 (Intel) | macOS 12 Monterey |
+| Linux | amd64, arm64 | kernel 3.2+, **glibc or musl** |
+| Windows | amd64, arm64 | Windows 10 / Server 2016 |
+
+Linux builds are fully static (`CGO_ENABLED=0`, no `INTERP` segment), so a single
+binary runs on Debian/Ubuntu/RHEL *and* Alpine with no `GLIBC_2.xx` errors. The
+macOS builds link only `libSystem`/`CoreFoundation`/`Security`, which are present
+on every macOS install — Apple does not support fully static executables.
+
+Unsupported platforms (32-bit ARM, 32-bit x86) fail with a clear message rather
+than a confusing exec error. To add one, append its `GOOS/GOARCH` pair to
+`TARGETS` in [`scripts/build.sh`](scripts/build.sh) and rebuild.
+
+The minimum OS versions come from the Go toolchain used to build. Building with
+Go 1.22 instead lowers the macOS floor to 11 Big Sur; Go 1.20 reaches Windows 7
+and macOS 10.13.
+
+## Building
+
+Requires Go 1.24+. Cross-compiles every target from any one machine:
+
+```bash
+./scripts/build.sh v0.2.0
+```
+
+Binaries are committed to `libexec/` so the plugin works straight from a clone,
+with no build step or network fetch during install.
 
 ## Installation
 
@@ -84,6 +121,8 @@ Every GraphQL request then sends `Authorization: Bearer <token>`.
 
 ## Bundled commands (`bin/`, on PATH when the plugin is enabled)
 
+Each is a shim that execs the platform binary in `libexec/`.
+
 - `ecombrain-login` — run the auth flow and store a token.
 - `ecombrain-gql --query '<gql>' [--variables '<json>']` — run a read-only query
   (also accepts a query on stdin). Exit code `2` means an authentication problem
@@ -93,16 +132,17 @@ Every GraphQL request then sends `Authorization: Bearer <token>`.
 
 ## Configuration
 
-The plugin talks to exactly two endpoints, hardcoded in `lib/config.js`:
+The plugin talks to exactly two endpoints, hardcoded in
+[`internal/config/config.go`](internal/config/config.go):
 
 | Constant | Endpoint |
 | --- | --- |
-| `FRONTEND_URL` | `https://ecombrain.sellerplex.com` (sign-in / `/connect` handoff) |
-| `API_URL` | `https://eb-api.sellerplex.com/graphql` (read-only Data Layer) |
+| `frontendURL` | `https://ecombrain.sellerplex.com` (sign-in / `/connect` handoff) |
+| `apiURL` | `https://eb-api.sellerplex.com/graphql` (read-only Data Layer) |
 
 **No environment variables are consulted for URLs** and no URL config file is
 read — so a stray or hostile env var can never redirect the bearer token to
-another host. To target a different environment, edit those two constants.
+another host. To target a different environment, edit those two constants and rebuild.
 
 `~/.config/ecombrain/` holds **only** `credentials.json` (the stored token). The
 file and its directory are locked to the current user on every platform:
@@ -112,9 +152,10 @@ Windows.
 Check the resolved values any time with `ecombrain-config` (it never prints the
 token).
 
-- Testing aid: `ECOMBRAIN_NO_BROWSER=1` makes `ecombrain-login` skip opening a
-  browser and instead print the connect URL (for headless/CI testing). It has no
-  effect on URLs or the token.
+- `ECOMBRAIN_NO_BROWSER=1` (or `ecombrain-login --no-browser`) skips opening a
+  browser and prints the connect URL instead, for headless/CI testing. It has no
+  effect on URLs or the token. Note this does **not** make login work over SSH:
+  the callback still has to reach this host's `127.0.0.1`.
 
 ## Frontend `/connect` handoff contract (implemented by the frontend + console API)
 

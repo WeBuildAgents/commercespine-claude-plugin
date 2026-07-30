@@ -1,0 +1,216 @@
+// Command ecombrain provides the Ecombrain Claude plugin's local commands.
+//
+// It is a single binary with three subcommands. The bin/ shims invoke it as
+// `ecombrain login`, `ecombrain gql`, and `ecombrain config`; it also dispatches
+// on argv[0] so a copy or symlink named `ecombrain-login` works directly.
+//
+// Exit codes:
+//
+//	0  success
+//	2  authentication problem (no token / rejected token) — user should re-login
+//	1  any other error
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/config"
+	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/graphql"
+	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/login"
+)
+
+func main() {
+	cmd, args := resolveCommand()
+	switch cmd {
+	case "login":
+		os.Exit(login.Run(args))
+	case "gql":
+		os.Exit(runGQL(args))
+	case "config":
+		os.Exit(runConfig(args))
+	case "version":
+		fmt.Println(version)
+		os.Exit(0)
+	default:
+		fmt.Fprintf(os.Stderr, "Usage: ecombrain <login|gql|config|version> [options]\n")
+		os.Exit(1)
+	}
+}
+
+// version is stamped at build time with -ldflags "-X main.version=…".
+var version = "dev"
+
+// knownCommands gates argv[0] dispatch. Without this check the shipped binaries
+// — named ecombrain-linux-arm64, ecombrain-windows-amd64.exe and so on — would
+// parse their own platform suffix as a subcommand and always print usage.
+var knownCommands = map[string]bool{"login": true, "gql": true, "config": true, "version": true}
+
+// resolveCommand accepts both `ecombrain login …` and an argv[0] of
+// `ecombrain-login`, so the bin/ shims and direct symlinks behave identically.
+func resolveCommand() (string, []string) {
+	base := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
+	if suffix, ok := strings.CutPrefix(base, "ecombrain-"); ok && knownCommands[suffix] {
+		return suffix, os.Args[1:]
+	}
+	if len(os.Args) < 2 {
+		return "", nil
+	}
+	return os.Args[1], os.Args[2:]
+}
+
+func runGQL(args []string) int {
+	var query, variablesRaw string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--query", "-q":
+			if i+1 < len(args) {
+				i++
+				query = args[i]
+			}
+		case "--variables", "-v":
+			if i+1 < len(args) {
+				i++
+				variablesRaw = args[i]
+			}
+		case "--help", "-h":
+			fmt.Println("Usage: ecombrain-gql --query '<gql>' [--variables '<json>']")
+			fmt.Println("       echo '<gql>' | ecombrain-gql")
+			return 0
+		}
+	}
+
+	if strings.TrimSpace(query) == "" {
+		// No --query: read the query from stdin when it is piped.
+		if stat, err := os.Stdin.Stat(); err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
+			raw, err := io.ReadAll(os.Stdin)
+			if err == nil {
+				query = strings.TrimSpace(string(raw))
+			}
+		}
+	}
+	if strings.TrimSpace(query) == "" {
+		fmt.Fprintln(os.Stderr, "Error: no query provided (use --query or stdin).")
+		return 1
+	}
+
+	variables := map[string]any{}
+	if variablesRaw != "" {
+		if err := json.Unmarshal([]byte(variablesRaw), &variables); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: --variables is not valid JSON: %v\n", err)
+			return 1
+		}
+	}
+
+	data, err := graphql.Execute(query, variables)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		var authErr *graphql.AuthError
+		if errors.As(err, &authErr) {
+			return 2
+		}
+		return 1
+	}
+
+	var pretty any
+	if err := json.Unmarshal(data, &pretty); err != nil {
+		fmt.Println(string(data))
+		return 0
+	}
+	out, err := json.MarshalIndent(pretty, "", "  ")
+	if err != nil {
+		fmt.Println(string(data))
+		return 0
+	}
+	fmt.Println(string(out))
+	return 0
+}
+
+func maskToken(creds *config.Credentials) string {
+	if creds == nil || creds.Token == "" {
+		return ""
+	}
+	t := creds.Token
+	if len(t) <= 8 {
+		return "****"
+	}
+	return fmt.Sprintf("%s…%s (%d chars)", t[:4], t[len(t)-4:], len(t))
+}
+
+func runConfig(args []string) int {
+	asJSON := false
+	for _, a := range args {
+		if a == "--json" {
+			asJSON = true
+		}
+		if a == "--help" || a == "-h" {
+			fmt.Println("Usage: ecombrain-config [--json]")
+			return 0
+		}
+	}
+
+	creds := config.ReadCredentials()
+	obtainedAt := ""
+	if creds != nil {
+		obtainedAt = creds.ObtainedAt
+	}
+
+	if asJSON {
+		status := map[string]any{
+			"frontendUrl":     config.FrontendURL(),
+			"apiUrl":          config.APIURL(),
+			"credentialsPath": config.CredentialsPath(),
+			"tokenPresent":    config.HasToken(),
+			"tokenPreview":    nilIfEmpty(maskToken(creds)),
+			"obtainedAt":      nilIfEmpty(obtainedAt),
+		}
+		out, err := json.MarshalIndent(status, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Could not encode status: %v\n", err)
+			return 1
+		}
+		fmt.Println(string(out))
+		return 0
+	}
+
+	lines := []string{
+		"Ecombrain plugin configuration",
+		"------------------------------",
+		"Frontend URL:      " + config.FrontendURL(),
+		"API URL:           " + config.APIURL(),
+		"Credentials file:  " + config.CredentialsPath(),
+	}
+	if config.HasToken() {
+		lines = append(lines,
+			"Token present:     yes",
+			"Token:             "+maskToken(creds),
+			"Obtained at:       "+orUnknown(obtainedAt),
+		)
+	} else {
+		lines = append(lines,
+			"Token present:     no",
+			"Next step:         run /ecombrain:login to authenticate.",
+		)
+	}
+	fmt.Println(strings.Join(lines, "\n"))
+	return 0
+}
+
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}
