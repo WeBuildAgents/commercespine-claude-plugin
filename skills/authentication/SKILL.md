@@ -25,9 +25,11 @@ a machine-readable form.
 
 ## Recovering from auth failures
 
-Ecombrain scripts exit with **code 2** on authentication problems (no token, or a
-token the API rejected with 401/403 or an "unauthenticated" GraphQL error). When
-you see this:
+Ecombrain commands exit with **code 2** on authentication problems: no token
+stored, or a token the API rejected — either an HTTP 401/403, or an HTTP 200
+carrying a GraphQL error whose `extensions.code` is `UNAUTHENTICATED`. Any other
+failure exits 1, so treat exit 2 as the authoritative signal to re-authenticate.
+When you see it:
 
 1. Tell the user their Ecombrain session needs to be (re)established.
 2. Instruct them to run `/ecombrain:login`.
@@ -38,10 +40,12 @@ the user through `/ecombrain:login`.
 
 ## Configuration
 
-- The frontend/API URLs are hardcoded constants in `lib/config.js`. Every user
-  and environment talks to the same two endpoints.
+- The frontend/API URLs are hardcoded constants in `internal/config/config.go`,
+  compiled into the binary. Every user and environment talks to the same two
+  endpoints.
 - **No environment variables are consulted for URLs**, and no URL config file is
   read. This is deliberate: a stray or hostile env var can never redirect the
   bearer token to another host. Do not tell the user to set an env var to change
   an endpoint — none exists, and setting one has no effect.
-- To target a different environment, edit those two constants in a local checkout.
+- To target a different environment, edit those two constants and rebuild the
+  binaries with `scripts/build.sh`.
