@@ -1,14 +1,14 @@
 // Command ecombrain provides the Ecombrain Claude plugin's local commands.
 //
 // It is a single binary with three subcommands. The bin/ shims invoke it as
-// `ecombrain login`, `ecombrain gql`, and `ecombrain config`; it also dispatches
-// on argv[0] so a copy or symlink named `ecombrain-login` works directly.
+// `ecombrain login`, `ecombrain gql`, and `ecombrain config`.
 //
 // Exit codes:
 //
 //	0  success
-//	2  authentication problem (no token / rejected token) — user should re-login
-//	1  any other error
+//	2  authentication problem (no token, or one the API rejected) — and only
+//	   this: exit 2 is the signal that signing in again will help
+//	1  any other failure, including one that merely prevented verification
 package main
 
 import (
@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/config"
@@ -26,7 +25,11 @@ import (
 )
 
 func main() {
-	cmd, args := resolveCommand()
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "Usage: ecombrain <login|gql|config|version> [options]")
+		os.Exit(1)
+	}
+	cmd, args := os.Args[1], os.Args[2:]
 	switch cmd {
 	case "login":
 		os.Exit(login.Run(args))
@@ -45,24 +48,6 @@ func main() {
 
 // version is stamped at build time with -ldflags "-X main.version=…".
 var version = "dev"
-
-// knownCommands gates argv[0] dispatch. Without this check the shipped binaries
-// — named ecombrain-linux-arm64, ecombrain-windows-amd64.exe and so on — would
-// parse their own platform suffix as a subcommand and always print usage.
-var knownCommands = map[string]bool{"login": true, "gql": true, "config": true, "version": true}
-
-// resolveCommand accepts both `ecombrain login …` and an argv[0] of
-// `ecombrain-login`, so the bin/ shims and direct symlinks behave identically.
-func resolveCommand() (string, []string) {
-	base := strings.TrimSuffix(filepath.Base(os.Args[0]), ".exe")
-	if suffix, ok := strings.CutPrefix(base, "ecombrain-"); ok && knownCommands[suffix] {
-		return suffix, os.Args[1:]
-	}
-	if len(os.Args) < 2 {
-		return "", nil
-	}
-	return os.Args[1], os.Args[2:]
-}
 
 func runGQL(args []string) int {
 	var query, variablesRaw string
@@ -154,7 +139,17 @@ func runConfig(args []string) int {
 		}
 	}
 
-	creds := config.ReadCredentials()
+	credsPath, err := config.CredentialsPath()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	creds, err := config.ReadCredentials()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+		return 1
+	}
+	hasToken := creds != nil && creds.Token != ""
 	obtainedAt := ""
 	if creds != nil {
 		obtainedAt = creds.ObtainedAt
@@ -164,8 +159,8 @@ func runConfig(args []string) int {
 		status := map[string]any{
 			"frontendUrl":     config.FrontendURL(),
 			"apiUrl":          config.APIURL(),
-			"credentialsPath": config.CredentialsPath(),
-			"tokenPresent":    config.HasToken(),
+			"credentialsPath": credsPath,
+			"tokenPresent":    hasToken,
 			"tokenPreview":    nilIfEmpty(maskToken(creds)),
 			"obtainedAt":      nilIfEmpty(obtainedAt),
 		}
@@ -183,9 +178,9 @@ func runConfig(args []string) int {
 		"------------------------------",
 		"Frontend URL:      " + config.FrontendURL(),
 		"API URL:           " + config.APIURL(),
-		"Credentials file:  " + config.CredentialsPath(),
+		"Credentials file:  " + credsPath,
 	}
-	if config.HasToken() {
+	if hasToken {
 		lines = append(lines,
 			"Token present:     yes",
 			"Token:             "+maskToken(creds),

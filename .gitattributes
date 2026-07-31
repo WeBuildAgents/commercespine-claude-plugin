@@ -16,3 +16,9 @@ scripts/*.sh text eol=lf
 # The compiled binaries are binary. Without this, the `text=auto` heuristic above
 # could mangle them on checkout, and diffs would be unreadable noise.
 libexec/** binary
+
+# ...but libexec/ also holds the two shared dispatchers, which are text. These
+# rules must come AFTER the wildcard above: for a path matched more than once,
+# git applies the last matching line.
+libexec/dispatch.sh  text eol=lf
+libexec/dispatch.cmd text eol=crlf

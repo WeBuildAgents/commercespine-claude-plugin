@@ -46,10 +46,10 @@ var (
 	writeOpRe     = regexp.MustCompile(`(?i)\b(mutation|subscription)\b`)
 )
 
-// AssertReadOnly rejects anything that is not a read-only query. Comments and
+// assertReadOnly rejects anything that is not a read-only query. Comments and
 // string literals are stripped first so the keyword check does not trip on field
 // names or values.
-func AssertReadOnly(query string) error {
+func assertReadOnly(query string) error {
 	stripped := blockStringRe.ReplaceAllString(query, `""`)
 	stripped = stringRe.ReplaceAllString(stripped, `""`)
 	stripped = commentRe.ReplaceAllString(stripped, "")
@@ -103,11 +103,17 @@ func joinMessages(errs []gqlError) string {
 
 // Execute runs a read-only GraphQL operation and returns the raw `data` value.
 func Execute(query string, variables map[string]any) (json.RawMessage, error) {
-	if err := AssertReadOnly(query); err != nil {
+	if err := assertReadOnly(query); err != nil {
 		return nil, err
 	}
 
-	token := config.Token()
+	// A lookup failure (e.g. no resolvable config directory) is NOT an auth
+	// problem — re-running login cannot fix it — so it must not become an
+	// AuthError, which callers translate to exit 2.
+	token, err := config.Token()
+	if err != nil {
+		return nil, &RequestError{msg: err.Error()}
+	}
 	if token == "" {
 		return nil, &AuthError{msg: "No Ecombrain token found. Run /ecombrain:login to authenticate."}
 	}

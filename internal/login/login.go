@@ -165,10 +165,20 @@ func Run(args []string) int {
 	}
 	fmt.Printf("Token saved to %s\n", path)
 
+	// Distinguish "the API rejected this token" (re-running login helps, exit 2)
+	// from "we could not complete the check" (it does not, exit 1). Collapsing
+	// both into 2 makes the authentication skill advise a pointless re-login
+	// whenever the network hiccups.
 	fmt.Println("Verifying token...")
 	if _, err := graphql.Execute(graphql.PingQuery, nil); err != nil {
-		fmt.Fprintf(os.Stderr, "Token was saved but verification failed: %v\n", err)
-		return 2
+		var authErr *graphql.AuthError
+		if errors.As(err, &authErr) {
+			fmt.Fprintf(os.Stderr, "The token was saved but Ecombrain rejected it: %v\n", err)
+			return 2
+		}
+		fmt.Fprintf(os.Stderr, "The token was saved but could not be verified: %v\n", err)
+		fmt.Fprintln(os.Stderr, "This is usually a network problem — signing in again will not help.")
+		return 1
 	}
 	fmt.Println("Success — Ecombrain is connected. You can now ask data questions.")
 	return 0

@@ -4,6 +4,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,70 +34,92 @@ type Credentials struct {
 	ObtainedAt string `json:"obtainedAt,omitempty"`
 }
 
-// Dir returns the directory holding the credentials file. XDG_CONFIG_HOME is
+// dir returns the directory holding the credentials file. XDG_CONFIG_HOME is
 // respected when set, else ~/.config (which resolves to C:\Users\<name>\.config
 // on Windows). This only affects the local file location, never where the token
 // is sent.
-func Dir() string {
-	base := os.Getenv("XDG_CONFIG_HOME")
-	if base == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			// Fall back to the working directory rather than panicking; the
-			// subsequent write will surface a clear error if this is wrong.
-			home = "."
-		}
-		base = filepath.Join(home, ".config")
+//
+// There is deliberately no fallback to the working directory: silently writing a
+// bearer token into whatever directory the command happened to run from is worse
+// than refusing, and in containers or CI (where HOME is often unset) that
+// directory is frequently a checked-out repository.
+func dir() (string, error) {
+	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" {
+		return filepath.Join(base, "ecombrain"), nil
 	}
-	return filepath.Join(base, "ecombrain")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("could not determine your home directory; set XDG_CONFIG_HOME to choose where the Ecombrain token is stored: %w", err)
+	}
+	return filepath.Join(home, ".config", "ecombrain"), nil
 }
 
 // CredentialsPath returns the full path to credentials.json.
-func CredentialsPath() string { return filepath.Join(Dir(), "credentials.json") }
+func CredentialsPath() (string, error) {
+	d, err := dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(d, "credentials.json"), nil
+}
 
 // hardenPermissions restricts a file or directory to the current user.
 //
 //	POSIX  : chmod to the given mode (already applied at create time).
 //	Windows: mode bits are ignored by NTFS, so reset inherited ACLs and grant
 //	         full control to only the current user via icacls.
+//
+// Windows hardening is best effort: it is skipped when USERNAME is unset, and
+// icacls failures are ignored. The README documents this asymmetry.
 func hardenPermissions(path string, mode os.FileMode, isDir bool) {
 	if runtime.GOOS == "windows" {
 		user := os.Getenv("USERNAME")
 		if user == "" {
-			return // best effort
+			return
 		}
 		grant := user + ":F"
 		if isDir {
 			grant = user + ":(OI)(CI)F"
 		}
-		// Best effort — icacls may be unavailable in constrained environments.
 		_ = exec.Command("icacls", path, "/inheritance:r", "/grant:r", grant, "/Q").Run()
 		return
 	}
 	_ = os.Chmod(path, mode) // best effort — e.g. non-POSIX filesystem
 }
 
-// ReadCredentials loads the stored credentials, or nil when absent/unreadable.
-func ReadCredentials() *Credentials {
-	raw, err := os.ReadFile(CredentialsPath())
+// ReadCredentials loads the stored credentials. It returns (nil, nil) when no
+// credentials file exists yet; an error means the location could not be resolved
+// or the file could not be parsed.
+func ReadCredentials() (*Credentials, error) {
+	path, err := CredentialsPath()
 	if err != nil {
-		return nil
+		return nil, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("could not read %s: %w", path, err)
 	}
 	var creds Credentials
 	if err := json.Unmarshal(raw, &creds); err != nil {
-		return nil
+		return nil, fmt.Errorf("could not parse %s: %w", path, err)
 	}
-	return &creds
+	return &creds, nil
 }
 
 // WriteCredentials persists the credentials with owner-only permissions and
 // returns the path written.
 func WriteCredentials(creds Credentials) (string, error) {
-	dir := Dir()
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	d, err := dir()
+	if err != nil {
 		return "", err
 	}
-	hardenPermissions(dir, 0o700, true)
+	if err := os.MkdirAll(d, 0o700); err != nil {
+		return "", err
+	}
+	hardenPermissions(d, 0o700, true)
 
 	raw, err := json.MarshalIndent(creds, "", "  ")
 	if err != nil {
@@ -104,7 +127,7 @@ func WriteCredentials(creds Credentials) (string, error) {
 	}
 	raw = append(raw, '\n')
 
-	path := CredentialsPath()
+	path := filepath.Join(d, "credentials.json")
 	// Create with restrictive permissions from the start on POSIX, then harden
 	// for the current platform.
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
@@ -114,14 +137,25 @@ func WriteCredentials(creds Credentials) (string, error) {
 	return path, nil
 }
 
-// Token returns the stored bearer token, or "" when none is present.
-func Token() string {
-	creds := ReadCredentials()
-	if creds == nil {
-		return ""
+// Token returns the stored bearer token. An empty string with a nil error means
+// no token is stored yet — that is an authentication problem. A non-nil error
+// means the token could not be looked up at all, which is not.
+func Token() (string, error) {
+	creds, err := ReadCredentials()
+	if err != nil {
+		return "", err
 	}
-	return creds.Token
+	if creds == nil {
+		return "", nil
+	}
+	return creds.Token, nil
 }
 
 // HasToken reports whether a token is stored.
-func HasToken() bool { return Token() != "" }
+func HasToken() (bool, error) {
+	token, err := Token()
+	if err != nil {
+		return false, err
+	}
+	return token != "", nil
+}

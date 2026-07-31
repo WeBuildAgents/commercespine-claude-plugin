@@ -1,7 +1,7 @@
 {
   "name": "ecombrain",
   "description": "Secure, read-only access to the Ecombrain Data Layer via its GraphQL API. Authenticate once with /ecombrain:login, then ask Claude data questions answered directly from your Ecombrain account.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "SellerPlex"
   },
