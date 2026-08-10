@@ -1,5 +1,5 @@
 ---
-description: Query the Ecombrain Data Layer (read-only Amazon ads + retail GraphQL API) to answer questions about the user's account, product/ASIN, campaign, keyword, search-term, product-target, and advertised-product performance — impressions, clicks, spend, sales, ACOS/ROAS and other KPIs. Use whenever the user asks for Amazon advertising or sales data, metrics, rankings, or trends from their Ecombrain account.
+description: Query the Ecombrain Data Layer (read-only Amazon ads + retail GraphQL API) to answer questions about the user's account, product/ASIN, campaign, keyword, search-term, product-target, and advertised-product performance — impressions, clicks, spend, sales, ACOS/ROAS and other KPIs — plus current FBA/merchant inventory levels, stock coverage and restock recommendations. Use whenever the user asks for Amazon advertising, sales, or inventory data, metrics, rankings, or trends from their Ecombrain account.
 ---
 
 # Ecombrain Data Layer
@@ -26,6 +26,12 @@ Seven analytics entities, all daily and all sharing the same input/result shape:
 | `productTargetPerformance` | product-target/day |
 | `advertisedProductPerformance` | product-ad/day |
 
+Plus one snapshot entity:
+
+| Query | Grain |
+|---|---|
+| `inventory` | current inventory per account·seller·ASIN·SKU (**no `dateRange`, no `groupBy`**) |
+
 Plus metadata queries: `amazonAccounts`, `dataCatalog`, `dataAsset`,
 `dataFreshness`, `_health`. (See reference.md.)
 
@@ -41,8 +47,8 @@ Do **not** query `brandAnalyticsProducts`, `brandAnalyticsSearch`, or
    marketplaces. Pass the relevant `id`s as `accountIds`. If the user clearly
    means "everything," you may omit `accountIds` (defaults to full token scope).
 
-3. **Pick the date range.** Every analytics query needs `dateRange { from, to }`
-   (`YYYY-MM-DD`). If the user is vague, ask or pick a sensible window (e.g. last
+3. **Pick the date range.** Every *analytics* query needs `dateRange { from, to }`
+   (`YYYY-MM-DD`); `inventory` takes none — it is a snapshot. If the user is vague, ask or pick a sensible window (e.g. last
    30 days) and state which you used. Check `dataFreshness` if you need the latest
    available date.
 
@@ -84,6 +90,31 @@ ecombrain-gql \
       "groupBy": ["campaignId"],
       "orderBy": [{ "field": "adSpend", "direction": "DESC" }],
       "pagination": { "first": 25 }
+    }
+  }'
+```
+
+## Example — low-stock SKUs (inventory snapshot)
+
+```bash
+ecombrain-gql \
+  --query 'query($input: InventoryInput!) {
+    inventory(input: $input) {
+      rows {
+        asin sku quantity price
+        fbaInventory { fulfillableQuantity reservedQuantity totalQuantity }
+        salesCoverageAndReplenishment { daysOfSupply recommendedReplenishmentQty alert }
+      }
+      pageInfo { hasNextPage endCursor }
+      queryInfo { returnedRows }
+    }
+  }' \
+  --variables '{
+    "input": {
+      "accountIds": ["<ACCOUNT_ID>"],
+      "where": { "quantity": { "lte": 20 } },
+      "orderBy": [{ "field": "quantity", "direction": "ASC" }],
+      "pagination": { "first": 50 }
     }
   }'
 ```

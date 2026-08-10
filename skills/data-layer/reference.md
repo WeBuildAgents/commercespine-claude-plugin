@@ -1,8 +1,9 @@
 # Ecombrain Data Layer — schema reference
 
-Exact fields for every queryable entity. All analytics queries are **read-only**
-and share the same envelope. Read this file when building a query so field names
-and filters are correct.
+Exact fields for every queryable entity. All queries are **read-only**. The 7
+analytics entities share the same envelope; `inventory` is a snapshot entity with
+a slightly different input (see its section). Read this file when building a query
+so field names and filters are correct.
 
 ## Query envelope (all 7 analytics entities)
 
@@ -91,6 +92,63 @@ Where: `accountId(Id), reportDate(Date), campaignId(Id), product(String), sku(St
 
 ---
 
+## The inventory entity (snapshot, L1)
+
+```graphql
+inventory(input: InventoryInput!): InventoryResult!
+```
+
+Amazon inventory from the Seller Central Inventory Report, with optional Manage
+FBA / Restock nests. **Not a daily time series** — it is a current snapshot per
+`accountId · sellerId · asin · sku`.
+
+`InventoryInput` differs from the analytics entities:
+
+| Field | Type | Notes |
+|---|---|---|
+| `accountIds` | `[String!]` | Optional. Omit for the full token scope. |
+| `where` | `InventoryWhere` | Field filters (list below). |
+| `orderBy` | `[OrderByInput!]` | Same shape as the analytics entities. |
+| `pagination` | `PaginationInput` | `first` default 100, **max 500**. |
+
+**No `dateRange` and no `groupBy`** — passing either is an error. Use
+`where: { reportDate: { ... } }` if you need to constrain the snapshot date.
+
+`InventoryResult` uses the same envelope: `rows`, `totals`, `pageInfo`, `queryInfo`.
+
+### `InventoryRow` — scalar fields
+
+`accountId, accountName, sellerId, asin, sku, countryCode, currencyCode, quantity, price, businessPrice, reportDate, downloadDate`
+
+`price` / `businessPrice` are `Decimal` (strings). There is **no `derived`** on
+inventory rows.
+
+### `InventoryRow` — nested groups
+
+Each is nullable and only queried if you select it; select only what you need.
+
+| Field | Type | Sub-fields |
+|---|---|---|
+| `productIdentification` | `ProductIdentification` | `asin, productName, condition, fulfilledBy, supplier, supplierPartNo` |
+| `availableAndTotalInventory` | `AvailableAndTotalInventory` | `available, totalUnits, customerOrder, unfulfillable` (all `Int`) |
+| `fbaInventory` | `FbaInventory` | `fulfillableQuantity, totalQuantity, reservedQuantity, unsellableQuantity, researchingQuantity, warehouseQuantity, futureSupplyBuyable, reservedFutureSupply` (all `Int`) |
+| `fbaInboundInventory` | `FbaInboundInventory` | `workingQuantity, shippedQuantity, receivingQuantity` (all `Int`) |
+| `inboundShipments` | `InboundShipments` | `working, shipped, receiving, inbound` (all `Int`) |
+| `fulfillmentCenterInventory` | `FulfillmentCenterInventory` | `fcProcessing, fcTransfer` (all `Int`) |
+| `merchantFulfilledInventory` | `MerchantFulfilledInventory` | `fulfillableQuantity (Int), listingExists (Boolean)` |
+| `inventoryThresholds` | `InventoryThresholds` | `currentMonthMinimum, currentMonthMaximum, currentMonthVeryLow, currentMonthVeryHigh, nextMonthMinimum, nextMonthMaximum, nextMonthVeryLow, nextMonthVeryHigh` (all `Int`) |
+| `salesCoverageAndReplenishment` | `SalesCoverageAndReplenishment` | `alert (String), daysOfSupply (Int), daysOfSupplyAtAmazon (Int), totalDaysOfSupply (Int), unitsSoldLast30Days (Int), salesLast30Days (Decimal), recommendedReplenishmentQty (Int), recommendedShipDate (DateTime), maximumShipmentQuantity (Int), unitStorageSize (String), utilization (String)` |
+| `fbaDateControls` | `FbaDateControls` | `reportDate, downloadDate` (`Date`) |
+| `restockDateControls` | `RestockDateControls` | `reportDate, downloadDate` (`Date`) |
+
+### `InventoryWhere` — filterable fields
+
+`accountId(Id), sellerId(String), asin(String), sku(String), countryCode(String), quantity(Int), price(Decimal), businessPrice(Decimal), reportDate(Date), downloadDate(Date)`
+
+Nested-group fields are **not** filterable.
+
+---
+
 ## Metadata / catalog queries (no envelope)
 
 ### `amazonAccounts: [AmazonAccount!]!`
@@ -99,8 +157,8 @@ No arguments. Returns the accounts the token can access. Use this first to get
 `AmazonAccount`: `id!, sellerId!, marketplaceId!, marketplaceName, marketplaceRegion, storeName, accountType, countryCode, currencyCode, isActive!, connectedAdsApi!, connectedSellerCentral!`
 
 ### `dataCatalog(layer: DataLayer): [DataAsset!]!`
-Lists queryable assets. `layer` is optional (`L1` | `L2` | `L3`); all current
-analytics entities are `L2`.
+Lists queryable assets. `layer` is optional (`L1` | `L2` | `L3`); the 7 analytics
+entities are `L2`, `inventory` is `L1`.
 
 ### `dataAsset(asset: String!): DataAsset!`
 Schema/metadata for one asset **by GraphQL entity name** (e.g. `"campaignPerformance"`).
