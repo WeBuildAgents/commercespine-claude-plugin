@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Marketplace for the Ecombrain Claude plugin.",
-    "version": "0.1.0"
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "ecombrain",
       "source": ".",
       "description": "Secure, read-only access to the Ecombrain Data Layer via its GraphQL API. Authenticate with /ecombrain:login, then ask Claude data questions answered from your Ecombrain account.",
-      "version": "0.1.0",
+      "version": "0.3.0",
       "author": {
         "name": "Ecombrain"
       }

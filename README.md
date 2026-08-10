@@ -4,14 +4,58 @@ Gives Claude secure, **read-only** access to the Ecombrain Data Layer via its
 GraphQL API. Authenticate once with `/ecombrain:login`, then ask Claude data
 questions that it answers by querying your Ecombrain account.
 
-There is **no MCP server** — all API access goes through small, zero-dependency
-Node scripts in `bin/` that use a per-user bearer token.
+There is **no MCP server** — all API access goes through a small, dependency-free
+native binary that uses a per-user bearer token.
 
 ## Requirements
 
-- Node.js 18+ (uses the built-in global `fetch`)
+- **No runtime to install.** Prebuilt native binaries ship with the plugin (see
+  [Supported platforms](#supported-platforms)).
 - A machine where Claude runs locally (Claude Desktop or Claude Code CLI) so the
   browser login and its temporary `localhost` callback work
+
+## Supported platforms
+
+`bin/` holds three-line wrappers; the shared dispatcher and one static binary per
+platform live in `libexec/`. The dispatcher picks the right binary from
+`uname -s`/`uname -m` (or `PROCESSOR_ARCHITECTURE` on Windows). It sits in
+`libexec/` rather than `bin/` because `bin/` is placed on PATH when the plugin is
+enabled, and a helper there would appear as a runnable command.
+
+| OS | Architectures | Minimum version |
+| --- | --- | --- |
+| macOS | arm64 (Apple Silicon), amd64 (Intel) | macOS 12 Monterey |
+| Linux | amd64, arm64 | kernel 3.2+, **glibc or musl** |
+| Windows | amd64, arm64 | Windows 10 / Server 2016 |
+
+Linux builds are fully static (`CGO_ENABLED=0`, no `INTERP` segment), so a single
+binary runs on Debian/Ubuntu/RHEL *and* Alpine with no `GLIBC_2.xx` errors. The
+macOS builds link only `libSystem`/`CoreFoundation`/`Security`, which are present
+on every macOS install — Apple does not support fully static executables.
+
+Unsupported platforms (32-bit ARM, 32-bit x86) fail with a clear message rather
+than a confusing exec error. To add one, append its `GOOS/GOARCH` pair to
+`TARGETS` in [`scripts/build.sh`](scripts/build.sh) and rebuild.
+
+The floors above are those of the toolchain pinned in `go.mod`
+(`toolchain go1.26.1`), so they are a property this repo enforces rather than of
+whoever happens to run the build. Building with an older Go lowers them — see
+[go.dev/wiki/MinimumRequirements](https://go.dev/wiki/MinimumRequirements) for
+each release's floors, and change the pin deliberately if you need to support
+older systems.
+
+## Building
+
+`go.mod` pins `toolchain go1.26.1`, so the Go tool fetches that exact version if
+needed and every build produces the same OS floors. Cross-compiles every target
+from any one machine:
+
+```bash
+./scripts/build.sh 0.3.0
+```
+
+Binaries are committed to `libexec/` so the plugin works straight from a clone,
+with no build step or network fetch during install.
 
 ## Installation
 
@@ -68,9 +112,12 @@ Check status any time by asking Claude to run `ecombrain-config`.
    `http://127.0.0.1:<port>/callback#token=…&state=…` (URL **fragment**, not
    query — fragments are never sent to remote servers or written to access logs /
    Referer headers). The local server serves a tiny page that reads the hash and
-   completes capture on loopback only.
-4. The script validates the `state`, stores the token at
-   `~/.config/ecombrain/credentials.json` (mode `0600`), and verifies it.
+   **POSTs** the values back to `127.0.0.1` as a JSON body — never as a query
+   string, so the token never enters browser history either.
+4. The command validates the `state`, stores the token at
+   `~/.config/ecombrain/credentials.json` (mode `0600`), and verifies it with an
+   auth-gated query. Exit `2` means the token was rejected; exit `1` means the
+   check could not be completed (e.g. no network).
 
 Every GraphQL request then sends `Authorization: Bearer <token>`.
 
@@ -84,6 +131,9 @@ Every GraphQL request then sends `Authorization: Bearer <token>`.
 
 ## Bundled commands (`bin/`, on PATH when the plugin is enabled)
 
+Each is a wrapper that execs `libexec/dispatch.sh`, which in turn execs the
+platform binary.
+
 - `ecombrain-login` — run the auth flow and store a token.
 - `ecombrain-gql --query '<gql>' [--variables '<json>']` — run a read-only query
   (also accepts a query on stdin). Exit code `2` means an authentication problem
@@ -93,28 +143,35 @@ Every GraphQL request then sends `Authorization: Bearer <token>`.
 
 ## Configuration
 
-The plugin talks to exactly two endpoints, hardcoded in `lib/config.js`:
+The plugin talks to exactly two endpoints, hardcoded in
+[`internal/config/config.go`](internal/config/config.go):
 
 | Constant | Endpoint |
 | --- | --- |
-| `FRONTEND_URL` | `https://ecombrain.sellerplex.com` (sign-in / `/connect` handoff) |
-| `API_URL` | `https://eb-api.sellerplex.com/graphql` (read-only Data Layer) |
+| `frontendURL` | `https://ecombrain.sellerplex.com` (sign-in / `/connect` handoff) |
+| `apiURL` | `https://eb-api.sellerplex.com/graphql` (read-only Data Layer) |
 
 **No environment variables are consulted for URLs** and no URL config file is
 read — so a stray or hostile env var can never redirect the bearer token to
-another host. To target a different environment, edit those two constants.
+another host. To target a different environment, edit those two constants and rebuild.
 
-`~/.config/ecombrain/` holds **only** `credentials.json` (the stored token). The
-file and its directory are locked to the current user on every platform:
-`0600`/`0700` via `chmod` on macOS/Linux, and owner-only ACLs via `icacls` on
-Windows.
+`~/.config/ecombrain/` holds **only** `credentials.json` (the stored token). On
+macOS and Linux the file and its directory are created `0600`/`0700` and that is
+guaranteed. On Windows, NTFS ignores those mode bits, so the plugin additionally
+resets inherited ACLs with `icacls` — but that step is **best effort**: it is
+skipped when `USERNAME` is unset, and `icacls` failures are not fatal.
+
+If no config directory can be determined at all (no `HOME`, no
+`XDG_CONFIG_HOME`), the commands fail with a clear error and write nothing —
+a token is never placed in the current working directory as a fallback.
 
 Check the resolved values any time with `ecombrain-config` (it never prints the
 token).
 
-- Testing aid: `ECOMBRAIN_NO_BROWSER=1` makes `ecombrain-login` skip opening a
-  browser and instead print the connect URL (for headless/CI testing). It has no
-  effect on URLs or the token.
+- `ECOMBRAIN_NO_BROWSER=1` (or `ecombrain-login --no-browser`) skips opening a
+  browser and prints the connect URL instead, for headless/CI testing. It has no
+  effect on URLs or the token. Note this does **not** make login work over SSH:
+  the callback still has to reach this host's `127.0.0.1`.
 
 ## Frontend `/connect` handoff contract (implemented by the frontend + console API)
 
@@ -143,8 +200,14 @@ token).
 
 ## Releasing (maintainers)
 
-- Bump `version` in both `.claude-plugin/plugin.json` and the marketplace entry
-  in `.claude-plugin/marketplace.json`.
+- Bump `version` in **three** places: `.claude-plugin/plugin.json`, and both
+  `metadata.version` and the plugin entry's `version` in
+  `.claude-plugin/marketplace.json`.
+- **Rebuild the binaries at the new version** and commit them — skipping this
+  ships binaries whose `ecombrain version` disagrees with the manifest:
+  ```bash
+  ./scripts/build.sh 0.3.0
+  ```
 - Validate both manifests:
   ```bash
   claude plugin validate .claude-plugin/plugin.json
