@@ -1,5 +1,5 @@
 ---
-description: Query the Ecombrain Data Layer (read-only Amazon ads + retail GraphQL API) to answer questions about the user's account, product/ASIN, campaign, keyword, search-term, product-target, and advertised-product performance — impressions, clicks, spend, sales, ACOS/ROAS and other KPIs — plus current FBA/merchant inventory levels, stock coverage and restock recommendations. Use whenever the user asks for Amazon advertising, sales, or inventory data, metrics, rankings, or trends from their Ecombrain account.
+description: Query the Ecombrain Data Layer (read-only Amazon ads + retail GraphQL API) to answer questions about the user's account, product/ASIN, campaign, keyword, search-term, product-target, and advertised-product performance — impressions, clicks, spend, sales, ACOS/ROAS and other KPIs — plus current FBA/merchant inventory levels, stock coverage and restock recommendations, Seller Central listings, Brand Analytics search data, and product costs. Use whenever the user asks for Amazon advertising, sales, inventory, or listing data, metrics, rankings, or trends from their Ecombrain account.
 ---
 
 # Ecombrain Data Layer
@@ -8,130 +8,123 @@ Answer the user's Amazon performance questions by running **read-only** GraphQL
 queries against the Ecombrain Data Layer with the `ecombrain-gql` command. Only
 queries are allowed — never mutations or subscriptions.
 
-**The exact schema is in [`reference.md`](reference.md) next to this file. Read it
-before writing a query** so entity names, field names, and filters are correct.
-Do not guess field names and do not rely on introspection.
+## The schema is discovered, not memorized
 
-## Queryable entities
+This skill does **not** ship an entity/field list. The API publishes its own
+catalog, and that catalog is the source of truth — it is updated server-side, so
+it is always current while any list written here would go stale.
 
-Seven analytics entities, all daily and all sharing the same input/result shape:
+- **Entities and fields** → ask the API: `dataCatalog`, then `dataAsset`.
+- **How to build the query around them** → [`reference.md`](reference.md): the
+  query envelope, filter operators, scalars, and the things the catalog does not
+  report (`derived` KPIs, inventory/listing nested groups, which entities reject
+  `dateRange`).
 
-| Query | Grain |
-|---|---|
-| `accountPerformance` | account/day (ads + retail rollup) |
-| `productPerformance` | product ASIN·SKU/day |
-| `campaignPerformance` | campaign/day |
-| `keywordPerformance` | keyword/day |
-| `searchTermPerformance` | customer search-term/day |
-| `productTargetPerformance` | product-target/day |
-| `advertisedProductPerformance` | product-ad/day |
-
-Plus one snapshot entity:
-
-| Query | Grain |
-|---|---|
-| `inventory` | current inventory per account·seller·ASIN·SKU (**no `dateRange`, no `groupBy`**) |
-
-Plus metadata queries: `amazonAccounts`, `dataCatalog`, `dataAsset`,
-`dataFreshness`, `_health`. (See reference.md.)
-
-Do **not** query `brandAnalyticsProducts`, `brandAnalyticsSearch`, or
-`productCosts` — they are out of scope for this skill.
+Do not guess field names, do not rely on GraphQL introspection (it is disabled
+server-side), and do not assume the entity list from a previous session.
 
 ## Workflow
 
 1. **Ensure a token exists.** If unsure, run `ecombrain-config`. If no token,
    tell the user to run `/ecombrain:login` and stop until connected.
 
-2. **Resolve accounts (usually).** Run `amazonAccounts` to get account `id`s and
-   marketplaces. Pass the relevant `id`s as `accountIds`. If the user clearly
-   means "everything," you may omit `accountIds` (defaults to full token scope).
+2. **List the entities — always, before anything else.** This is cheap (~2 KB)
+   and tells you what exists right now:
 
-3. **Pick the date range.** Every *analytics* query needs `dateRange { from, to }`
-   (`YYYY-MM-DD`); `inventory` takes none — it is a snapshot. If the user is vague, ask or pick a sensible window (e.g. last
-   30 days) and state which you used. Check `dataFreshness` if you need the latest
-   available date.
+   ```bash
+   ecombrain-gql --query '{ dataCatalog { entity description layer queryable dateField } }'
+   ```
 
-4. **Build the query from [`reference.md`](reference.md):** choose the entity,
-   select only needed fields, add `where` filters (only filterable fields work),
-   `groupBy`/`orderBy` as needed, and `pagination` (`first` ≤ 500). Prefer GraphQL
-   variables over string interpolation, and pass them with `--variables`.
+   Read the descriptions and pick the entity whose grain matches the question.
+   Ads questions are usually `L2` `*Performance` entities; stock and listing
+   questions are usually `L1` snapshots.
 
-5. **Run it:**
+3. **Fetch that entity's fields** (~4 KB each — only the ones you need):
+
+   ```bash
+   ecombrain-gql --query '{ dataAsset(asset: "campaignPerformance") {
+     entity description layer dataset table accountField dateField queryable
+     fields { name type filterable groupable sortable aggregatable } } }'
+   ```
+
+   `asset` is the **entity name**, not the catalog `id`. `groupable`, `sortable`
+   and `aggregatable` map straight onto `groupBy`, `orderBy` and `totals`.
+   **`filterable` is not reliable** — the catalog flags almost everything
+   filterable while the real `<Entity>Where` is much narrower, so take `where`
+   keys from §6d of [`reference.md`](reference.md), not from the flag. See §2
+   there for the full mapping, including the trap where `groupBy` silently
+   returns `null` for name/label fields.
+
+4. **Resolve accounts.** Run `amazonAccounts` to get account `id`s and
+   marketplaces, and pass the relevant `id`s as `accountIds`. If the user clearly
+   means "everything," omit `accountIds` (defaults to the full token scope).
+
+   **`inventory` and `listing` require a specific `accountIds`.** They are wide
+   L1 snapshots with no date range to bound them, so an unscoped query scans
+   every account in the token's scope and can blow the bytes-billed cap outright.
+   Ask the user which account they mean — do not fall back to the full scope for
+   these two.
+
+5. **Pick the date range.** Time-series entities **require**
+   `dateRange { from, to }` (`YYYY-MM-DD`); snapshot entities (`inventory`,
+   `listing`) **reject** it. §6a of [`reference.md`](reference.md) says which is
+   which — note the catalog reports a `dateField` even for snapshots, so it
+   cannot answer this for you. If the user is vague, pick a sensible window
+   (e.g. last 30 days) and say which you used. Check `dataFreshness` when you
+   need the latest available date, or when using an entity for the first time —
+   `latestReportDate: null` means no data in scope.
+
+6. **Build the query** from the catalog output plus
+   [`reference.md`](reference.md): select only the fields you need, add `where`
+   filters (filterable fields only), `groupBy` / `orderBy`, and `pagination`
+   (`first` ≤ 500). Add `derived { acos roas ctr cpc cvr cpm aov }` for ad KPIs
+   rather than computing them yourself. Prefer GraphQL variables over string
+   interpolation and pass them with `--variables`.
+
+7. **Run it:**
+
    ```bash
    ecombrain-gql --query '<gql>' --variables '<json>'
    ```
+
    or pipe the query on stdin: `echo '<gql>' | ecombrain-gql`.
 
-6. **Paginate** when needed: request `pageInfo { hasNextPage endCursor }`, then
+8. **Paginate** when needed: request `pageInfo { hasNextPage endCursor }`, then
    pass `pagination.after = endCursor` until `hasNextPage` is false or you have
    enough. Cap the number of pages and tell the user if results were truncated.
 
-7. **Present** results as concise tables/summaries. `Decimal` values come back as
-   strings — treat them as numbers when formatting. Use `totals` for the aggregate
-   line and `derived { acos roas ctr cpc cvr cpm aov }` for KPIs.
+9. **Present** results as concise tables/summaries. `Decimal` values come back as
+   strings — treat them as numbers when formatting. Use `totals` for the
+   aggregate line.
 
-## Example — top campaigns by spend, last 30 days
+   **A missing row is not proof the thing does not exist.** Rows exist only for
+   entities that were active or emitted metrics in the window you asked for, so
+   an archived or paused campaign, keyword or product with no activity simply
+   will not appear. Say "no data for that range" and offer a wider window —
+   never "that campaign doesn't exist" or "you have no such keyword." See §6f of
+   [`reference.md`](reference.md).
 
-```bash
-ecombrain-gql \
-  --query 'query($input: CampaignPerformanceInput!) {
-    campaignPerformance(input: $input) {
-      rows { campaignName campaignType adSpend adRevenue adOrders derived { acos roas } }
-      totals { adSpend adRevenue }
-      pageInfo { hasNextPage endCursor }
-      queryInfo { returnedRows dateFrom dateTo }
-    }
-  }' \
-  --variables '{
-    "input": {
-      "accountIds": ["<ACCOUNT_ID>"],
-      "dateRange": { "from": "2026-06-23", "to": "2026-07-22" },
-      "groupBy": ["campaignId"],
-      "orderBy": [{ "field": "adSpend", "direction": "DESC" }],
-      "pagination": { "first": 25 }
-    }
-  }'
-```
-
-## Example — low-stock SKUs (inventory snapshot)
+## Example — list what's available, then drill in
 
 ```bash
-ecombrain-gql \
-  --query 'query($input: InventoryInput!) {
-    inventory(input: $input) {
-      rows {
-        asin sku quantity price
-        fbaInventory { fulfillableQuantity reservedQuantity totalQuantity }
-        salesCoverageAndReplenishment { daysOfSupply recommendedReplenishmentQty alert }
-      }
-      pageInfo { hasNextPage endCursor }
-      queryInfo { returnedRows }
-    }
-  }' \
-  --variables '{
-    "input": {
-      "accountIds": ["<ACCOUNT_ID>"],
-      "where": { "quantity": { "lte": 20 } },
-      "orderBy": [{ "field": "quantity", "direction": "ASC" }],
-      "pagination": { "first": 50 }
-    }
-  }'
+ecombrain-gql --query '{ dataCatalog { entity description layer queryable } }'
 ```
-
-## Example — list accounts first
 
 ```bash
 ecombrain-gql --query '{ amazonAccounts { id storeName marketplaceName countryCode currencyCode isActive } }'
 ```
 
+Full worked example (catalog → fields → query) is §7 of
+[`reference.md`](reference.md).
+
 ## Handling errors
 
 - **Exit code 2 (authentication):** token missing or rejected → tell the user to
   run `/ecombrain:login`, then retry. (See the `ecombrain:authentication` skill.)
-- **GraphQL errors (exit 1):** read stderr. Usually a wrong field/filter — fix it
-  against `reference.md` (e.g. a field that isn't in that entity's `Where` is not
-  filterable; `Decimal` filter values must be strings).
+- **GraphQL errors (exit 1):** read stderr and match it against the error table
+  in §8 of [`reference.md`](reference.md). Most are a non-filterable field in
+  `where`, a `Decimal` filter passed as a number, or `dateRange` on a snapshot
+  entity. Re-run `dataAsset` for the entity rather than guessing a correction.
 - **Unreachable API:** for local dev, confirm the GraphQL server (see
   `ecombrain-config` for the URL) is running.
 
@@ -142,3 +135,5 @@ ecombrain-gql --query '{ amazonAccounts { id storeName marketplaceName countryCo
 - Never print or ask the user for the raw token.
 - Keep `pagination.first` ≤ 500 and select only the fields you need (queries are
   billed by bytes processed — see `queryInfo.bytesProcessed`).
+- Don't pull the full catalog with `fields` for every entity (~50 KB) when one
+  `dataAsset` call will do.
