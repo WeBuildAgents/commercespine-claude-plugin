@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "Marketplace for the Ecombrain Claude plugin.",
-    "version": "0.3.0"
+    "version": "0.4.0"
   },
   "plugins": [
     {
       "name": "ecombrain",
       "source": ".",
-      "description": "Secure, read-only access to the Ecombrain Data Layer via its GraphQL API. Authenticate with /ecombrain:login, then ask Claude data questions answered from your Ecombrain account.",
-      "version": "0.3.0",
+      "description": "Query the Ecombrain Data Layer (read-only Amazon ads, retail and inventory data) and propose, review and approve Amazon Ads changes through the Action Layer. Authenticate once with /ecombrain:login.",
+      "version": "0.4.0",
       "author": {
         "name": "Ecombrain"
       }

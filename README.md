@@ -1,8 +1,14 @@
 # Ecombrain — Claude plugin
 
-Gives Claude secure, **read-only** access to the Ecombrain Data Layer via its
-GraphQL API. Authenticate once with `/ecombrain:login`, then ask Claude data
-questions that it answers by querying your Ecombrain account.
+Gives Claude access to your Ecombrain account: **read-only** queries against the
+Data Layer (Amazon ads, retail and inventory data) over GraphQL, plus the Action
+Layer, where Claude can propose, review and approve Amazon Ads changes.
+Authenticate once with `/ecombrain:login`.
+
+**Approving an Action Layer proposal enqueues a real change against your live
+Amazon Ads account.** Creating and listing proposals changes nothing; only
+approval executes. The skills require explicit confirmation before approving or
+rejecting.
 
 There is **no MCP server** — all API access goes through a small, dependency-free
 native binary that uses a per-user bearer token.
@@ -51,7 +57,7 @@ needed and every build produces the same OS floors. Cross-compiles every target
 from any one machine:
 
 ```bash
-./scripts/build.sh 0.3.0
+./scripts/build.sh 0.4.0
 ```
 
 Binaries are committed to `libexec/` so the plugin works straight from a clone,
@@ -127,7 +133,9 @@ Every GraphQL request then sends `Authorization: Bearer <token>`.
 | --- | --- | --- |
 | `login` | `/ecombrain:login` | Browser sign-in + token capture/storage |
 | `authentication` | model-invoked | Explains auth/token status and re-login recovery |
-| `data-layer` | model-invoked | Runs read-only GraphQL queries using the bundled schema reference |
+| `data-layer` | model-invoked | Runs read-only GraphQL queries, discovering the schema from the API's own `dataCatalog` |
+| `action-catalog` | model-invoked | Reads the live `/action/v1/action-catalog` to map a change to a published action key |
+| `action-proposals` | model-invoked | Creates, lists, approves and rejects Action Layer proposals |
 
 ## Bundled commands (`bin/`, on PATH when the plugin is enabled)
 
@@ -195,8 +203,13 @@ token).
 - Your token is stored locally at `~/.config/ecombrain/credentials.json`,
   restricted to your user account. It is never printed, logged, or transmitted
   anywhere else.
-- All queries are **read-only**; the plugin refuses GraphQL mutations and
+- All **GraphQL** access is read-only; `ecombrain-gql` refuses mutations and
   subscriptions.
+- The **Action Layer** (`/action/v1`) is the one write path. Approving a
+  proposal enqueues a real Amazon Ads change; creating or listing one does not.
+  The Action skills call it with `curl` and require an explicit confirmation
+  before approve or reject. They send the token only to the configured API host,
+  or to a host you name yourself in the conversation.
 
 ## Releasing (maintainers)
 
@@ -206,7 +219,7 @@ token).
 - **Rebuild the binaries at the new version** and commit them — skipping this
   ships binaries whose `ecombrain version` disagrees with the manifest:
   ```bash
-  ./scripts/build.sh 0.3.0
+  ./scripts/build.sh 0.4.0
   ```
 - Validate both manifests:
   ```bash
