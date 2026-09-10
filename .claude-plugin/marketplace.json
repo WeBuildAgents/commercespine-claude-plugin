@@ -1,20 +1,20 @@
 {
-  "name": "ecombrain-marketplace",
+  "name": "commercespine-marketplace",
   "owner": {
-    "name": "Ecombrain"
+    "name": "SellerPlex"
   },
   "metadata": {
-    "description": "Marketplace for the Ecombrain Claude plugin.",
-    "version": "0.4.0"
+    "description": "Marketplace for the Commerce Spine Claude plugin.",
+    "version": "0.5.0"
   },
   "plugins": [
     {
-      "name": "ecombrain",
+      "name": "commercespine",
       "source": ".",
-      "description": "Query the Ecombrain Data Layer (read-only Amazon ads, retail and inventory data) and propose, review and approve Amazon Ads changes through the Action Layer. Authenticate once with /ecombrain:login.",
-      "version": "0.4.0",
+      "description": "Query the Commerce Spine Data Layer (read-only Amazon ads, retail and inventory data) and propose, review and approve Amazon Ads changes through the Action Layer. Authenticate once with /commercespine:login.",
+      "version": "0.5.0",
       "author": {
-        "name": "Ecombrain"
+        "name": "SellerPlex"
       }
     }
   ]
