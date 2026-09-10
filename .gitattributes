@@ -2,9 +2,9 @@
 # break `#!/bin/sh` on checkout, so force LF everywhere by default.
 * text=auto eol=lf
 
-bin/ecombrain-login  text eol=lf
-bin/ecombrain-gql    text eol=lf
-bin/ecombrain-config text eol=lf
+bin/commercespine-login  text eol=lf
+bin/commercespine-gql    text eol=lf
+bin/commercespine-config text eol=lf
 *.go         text eol=lf
 *.md         text eol=lf
 *.json       text eol=lf
