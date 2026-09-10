@@ -1,24 +1,24 @@
 ---
-description: Create, list, inspect, approve, and reject (reprove) Ecombrain Action Layer proposals on /action/v1/action-proposals — the approval queue for Amazon Ads changes. Use when the user asks to submit or create a proposal, see all proposals or the pending approval queue, check the status of a change, approve/confirm/enqueue one, or reject/reprove one. Map the change with the action-catalog skill first.
+description: Create, list, inspect, approve, and reject (reprove) Commerce Spine Action Layer proposals on /action/v1/action-proposals — the approval queue for Amazon Ads changes. Use when the user asks to submit or create a proposal, see all proposals or the pending approval queue, check the status of a change, approve/confirm/enqueue one, or reject/reprove one. Map the change with the action-catalog skill first.
 ---
 
-# Ecombrain Action Proposals
+# Commerce Spine Action Proposals
 
 A proposal is a typed Amazon Ads change waiting for approval. Creating one
 changes nothing; **approving one enqueues it for execution against the live
 account.**
 
-Build the body with the `ecombrain:action-catalog` skill first — this skill does
+Build the body with the `commercespine:action-catalog` skill first — this skill does
 not invent catalog keys.
 
 > "reprove" / "reprovar" means **reject**, not approve.
 
 ## Base URL and token
 
-Same as the catalog skill: base URL from `ecombrain-config` with `/graphql`
+Same as the catalog skill: base URL from `commercespine-config` with `/graphql`
 stripped, or a host the user names in this conversation. Token from
-`~/.config/ecombrain/credentials.json`, sent as
-`Authorization: Bearer <token>` — must start `eb_live_` or `eb_dev_`; a Console
+`~/.config/commercespine/credentials.json`, sent as
+`Authorization: Bearer <token>` — must start `cs_live_` or `cs_dev_`; a Console
 JWT is rejected on `/action/v1`. Never print the token.
 
 ## Route by intent
@@ -42,7 +42,7 @@ Content-Type: application/json
 Idempotency-Key: <fresh uuid per distinct create>
 ```
 
-Body is the contract produced by `ecombrain:action-catalog`. Send only
+Body is the contract produced by `commercespine:action-catalog`. Send only
 `scope.amazonAccountId` unless the user supplied a profile/marketplace that
 matches the account row. `actions[]` must match `items[].action` in order.
 `target` is `{}` when creating a new entity.

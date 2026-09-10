@@ -3,7 +3,7 @@
 Proposals need real Amazon Ads ids on `target` and in parent parameters, plus
 current values for `preconditions.expected`. Those come from the Data Layer.
 
-**Discover, don't assume.** Use the `ecombrain:data-layer` skill: run
+**Discover, don't assume.** Use the `commercespine:data-layer` skill: run
 `dataCatalog` to see which entities exist, then `dataAsset(asset: "<entity>")`
 to see their fields. The id you need is on the entity whose grain matches the
 object you are changing — a keyword id on the keyword entity, a campaign id on
@@ -38,7 +38,7 @@ the search term itself as text.
 **You cannot filter by `campaignId`.** `where: { campaignId: { eq: "…" } }`
 fails with `No matching signature for operator = for argument types: INT64,
 STRING`, and `in` fails the same way. Fetch rows and filter client-side, or
-narrow with other filterable fields first. See §6d of the `ecombrain:data-layer`
+narrow with other filterable fields first. See §6d of the `commercespine:data-layer`
 reference.
 
 ## What the Data Layer does not have

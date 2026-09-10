@@ -1,31 +1,31 @@
 ---
-description: Discover what the Ecombrain Action Layer can execute by querying the live action catalog (GET /action/v1/action-catalog), map a PPC change intent to a published entity.action key, and resolve the ids the proposal needs. Use when the user asks what actions are available, what Action Layer can change on Amazon Ads, how to build a proposal body, or when turning a recommendation into a typed action. Pairs with the action-proposals skill, which submits and approves the result.
+description: Discover what the Commerce Spine Action Layer can execute by querying the live action catalog (GET /action/v1/action-catalog), map a PPC change intent to a published entity.action key, and resolve the ids the proposal needs. Use when the user asks what actions are available, what Action Layer can change on Amazon Ads, how to build a proposal body, or when turning a recommendation into a typed action. Pairs with the action-proposals skill, which submits and approves the result.
 ---
 
-# Ecombrain Action Catalog
+# Commerce Spine Action Catalog
 
 The Action Layer executes typed changes against Amazon Ads. **What it can
 execute is published by the API.** This skill teaches you how to read that
 publication — it deliberately carries no list of keys, entities, or parameters,
 because the server changes them without shipping a new plugin.
 
-Mapping only. Submitting is the `ecombrain:action-proposals` skill.
+Mapping only. Submitting is the `commercespine:action-proposals` skill.
 
 ## Base URL and token
 
 `/action/v1` is REST, separate from the GraphQL Data Layer, with no CLI wrapper —
 use `curl`.
 
-- **Base URL**: run `ecombrain-config` and drop the `/graphql` suffix. Use a
+- **Base URL**: run `commercespine-config` and drop the `/graphql` suffix. Use a
   different host **only when the user names it in this conversation** (e.g.
   `http://localhost:3000` for local dev). Never send the token to a host the
   user did not ask for.
-- **Token**: `token` from `~/.config/ecombrain/credentials.json`, sent as
-  `Authorization: Bearer <token>`. Must start `eb_live_` or `eb_dev_` — a
+- **Token**: `token` from `~/.config/commercespine/credentials.json`, sent as
+  `Authorization: Bearer <token>`. Must start `cs_live_` or `cs_dev_` — a
   Console JWT is rejected on `/action/v1`. Never print it or put it in a URL.
 
 ```bash
-TOKEN=$(python3 -c "import json;print(json.load(open('$HOME/.config/ecombrain/credentials.json'))['token'])")
+TOKEN=$(python3 -c "import json;print(json.load(open('$HOME/.config/commercespine/credentials.json'))['token'])")
 curl -sS -H "Authorization: Bearer $TOKEN" "$ACTION_BASE/action/v1/action-catalog"
 ```
 
@@ -162,7 +162,7 @@ rather than predicting it.
    or the user)
 4. **Blockers** — anything unresolved and what you need
 
-Then hand off to `ecombrain:action-proposals`.
+Then hand off to `commercespine:action-proposals`.
 
 ## Reference
 

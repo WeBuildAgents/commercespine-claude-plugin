@@ -1,4 +1,4 @@
-# Ecombrain Data Layer — query contract
+# Commerce Spine Data Layer — query contract
 
 **Entity and field lists are NOT in this file.** They live in the API's own
 catalog and are fetched at query time, so they are never stale. This file
@@ -15,7 +15,7 @@ All queries are **read-only** — never `mutation` or `subscription`.
 ### Step 1 — top level (always run this first)
 
 ```bash
-ecombrain-gql --query '{ dataCatalog { entity description layer queryable dateField } }'
+commercespine-gql --query '{ dataCatalog { entity description layer queryable dateField } }'
 ```
 
 ~2 KB. Returns every queryable entity with a one-line description. Read the
@@ -30,7 +30,7 @@ server-side.
 ### Step 2 — one entity's fields
 
 ```bash
-ecombrain-gql --query '{
+commercespine-gql --query '{
   dataAsset(asset: "campaignPerformance") {
     entity description layer dataset table accountField dateField queryable
     fields { name type filterable groupable sortable aggregatable }
@@ -48,7 +48,7 @@ at once is ~50 KB — do that only if you genuinely must compare entities.
 ### Step 3 — check freshness when recency matters
 
 ```bash
-ecombrain-gql --query '{ dataFreshness { asset dateField latestReportDate layer } }'
+commercespine-gql --query '{ dataFreshness { asset dateField latestReportDate layer } }'
 ```
 
 Here `asset` is the catalog **`id`** (`l2.campaign_performance`), not the entity
@@ -58,7 +58,7 @@ check this before building a report on an entity you have not used before.
 ### Step 4 — resolve accounts
 
 ```bash
-ecombrain-gql --query '{ amazonAccounts { id storeName marketplaceName countryCode currencyCode isActive } }'
+commercespine-gql --query '{ amazonAccounts { id storeName marketplaceName countryCode currencyCode isActive } }'
 ```
 
 `AmazonAccount`: `id!, sellerId!, marketplaceId!, marketplaceName,
@@ -351,7 +351,7 @@ Question: *"top campaigns by spend last 30 days, with ACOS."*
    without `groupBy` and let `orderBy` + `first` do the work:
 
 ```bash
-ecombrain-gql \
+commercespine-gql \
   --query 'query($input: CampaignPerformanceInput!) {
     campaignPerformance(input: $input) {
       rows { campaignId campaignName campaignType adSpend adRevenue adOrders derived { acos roas } }
@@ -378,7 +378,7 @@ names with a second, ungrouped query.
 Snapshot equivalent — low-stock SKUs, no `dateRange`, no `groupBy`:
 
 ```bash
-ecombrain-gql \
+commercespine-gql \
   --query 'query($input: InventoryInput!) {
     inventory(input: $input) {
       rows {
@@ -415,4 +415,4 @@ ecombrain-gql \
 | `Cannot query field "x" on type "<X>Row"` | Field name wrong or belongs to another entity. Re-run `dataAsset`; remember `derived` and nested groups are absent from the catalog. |
 | `Cannot query field "x" on type "DataAsset"` | The catalog surface is exactly `id, entity, description, layer, dataset, table, accountField, dateField, queryable, fields { name type filterable groupable sortable aggregatable }` — there is nothing else to ask for. |
 | Introspection error mentioning `__schema` / `__type` | Introspection is disabled server-side. Use `dataCatalog` / `dataAsset` instead. |
-| Exit code 2 | Auth — see the `ecombrain:authentication` skill. |
+| Exit code 2 | Auth — see the `commercespine:authentication` skill. |
