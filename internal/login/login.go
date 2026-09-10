@@ -29,8 +29,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/config"
-	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/graphql"
+	"github.com/WeBuildAgents/commercespine-claude-plugin/internal/config"
+	"github.com/WeBuildAgents/commercespine-claude-plugin/internal/graphql"
 )
 
 // timeout allows for a first-time sign-in that includes 2FA and token creation.
@@ -38,13 +38,13 @@ const timeout = 10 * time.Minute
 
 // Run executes the login flow. It returns the process exit code.
 func Run(args []string) int {
-	noBrowser := os.Getenv("ECOMBRAIN_NO_BROWSER") != ""
+	noBrowser := os.Getenv("COMMERCESPINE_NO_BROWSER") != ""
 	for _, a := range args {
 		if a == "--no-browser" {
 			noBrowser = true
 		}
 		if a == "--help" || a == "-h" {
-			fmt.Println("Usage: ecombrain-login [--no-browser]")
+			fmt.Println("Usage: commercespine-login [--no-browser]")
 			return 0
 		}
 	}
@@ -97,7 +97,7 @@ func Run(args []string) int {
 		// Constant-time-ish comparison is unnecessary here (the nonce never
 		// leaves this machine), but a mismatch must not settle the flow.
 		if payload.State == "" || payload.State != state {
-			writeJSON(w, http.StatusBadRequest, "State mismatch. Please run /ecombrain:login again.")
+			writeJSON(w, http.StatusBadRequest, "State mismatch. Please run /commercespine:login again.")
 			return
 		}
 		if payload.Token == "" {
@@ -106,7 +106,7 @@ func Run(args []string) int {
 		}
 		select {
 		case done <- result{token: payload.Token}:
-			writeJSON(w, http.StatusOK, "Connected to Ecombrain. You can close this tab and return to Claude.")
+			writeJSON(w, http.StatusOK, "Connected to Commerce Spine. You can close this tab and return to Claude.")
 		default:
 			// Already settled — idempotent response for a duplicate submit.
 			writeJSON(w, http.StatusOK, "Already connected. You can close this tab.")
@@ -130,9 +130,9 @@ func Run(args []string) int {
 		config.FrontendURL(), url.QueryEscape(callbackURL), url.QueryEscape(state))
 
 	if noBrowser {
-		fmt.Println("Open this URL in your browser to sign in to Ecombrain:")
+		fmt.Println("Open this URL in your browser to sign in to Commerce Spine:")
 	} else {
-		fmt.Println("Opening your browser to sign in to Ecombrain...")
+		fmt.Println("Opening your browser to sign in to Commerce Spine...")
 		fmt.Println("If it does not open automatically, paste this URL into your browser:")
 	}
 	fmt.Println(connectURL)
@@ -150,7 +150,7 @@ func Run(args []string) int {
 		}
 		token = res.token
 	case <-time.After(timeout):
-		fmt.Fprintf(os.Stderr, "Login timed out after %s. Run /ecombrain:login to try again.\n", timeout)
+		fmt.Fprintf(os.Stderr, "Login timed out after %s. Run /commercespine:login to try again.\n", timeout)
 		fmt.Fprintln(os.Stderr, "If you are on a remote or SSH machine, the browser cannot reach this host.")
 		return 1
 	}
@@ -173,14 +173,14 @@ func Run(args []string) int {
 	if _, err := graphql.Execute(graphql.PingQuery, nil); err != nil {
 		var authErr *graphql.AuthError
 		if errors.As(err, &authErr) {
-			fmt.Fprintf(os.Stderr, "The token was saved but Ecombrain rejected it: %v\n", err)
+			fmt.Fprintf(os.Stderr, "The token was saved but Commerce Spine rejected it: %v\n", err)
 			return 2
 		}
 		fmt.Fprintf(os.Stderr, "The token was saved but could not be verified: %v\n", err)
 		fmt.Fprintln(os.Stderr, "This is usually a network problem — signing in again will not help.")
 		return 1
 	}
-	fmt.Println("Success — Ecombrain is connected. You can now ask data questions.")
+	fmt.Println("Success — Commerce Spine is connected. You can now ask data questions.")
 	return 0
 }
 
@@ -203,7 +203,7 @@ func writeJSON(w http.ResponseWriter, status int, message string) {
 // history.
 const bridgeHTML = `<!doctype html><html><head><meta charset="utf-8"><title>Connecting…</title>
 <style>body{font-family:system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem;text-align:center;color:#1a1a1a}h1{font-size:1.3rem}</style>
-</head><body><p id="m">Completing Ecombrain sign-in…</p>
+</head><body><p id="m">Completing Commerce Spine sign-in…</p>
 <script>
 (function () {
   function show(title, msg) {
@@ -226,7 +226,7 @@ const bridgeHTML = `<!doctype html><html><head><meta charset="utf-8"><title>Conn
     }).then(function (r) {
       return r.json().then(function (b) { return { ok: r.ok, body: b }; });
     }).then(function (res) {
-      show(res.ok ? 'Connected to Ecombrain' : 'Authentication failed', res.body.message || '');
+      show(res.ok ? 'Connected to Commerce Spine' : 'Authentication failed', res.body.message || '');
     }).catch(function () {
       show('Authentication failed', 'Could not reach the local sign-in helper.');
     });

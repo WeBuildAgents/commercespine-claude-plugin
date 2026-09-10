@@ -4,13 +4,13 @@ Envelopes for `/action/v1/action-proposals`. Prefer the live response over this
 file whenever a call succeeds — this is here for shapes you need *before* the
 first call, and for error triage.
 
-Auth: `Authorization: Bearer <eb_live_… | eb_dev_…>`.
+Auth: `Authorization: Bearer <cs_live_… | cs_dev_…>`.
 Capabilities: create `PROPOSE`, list/get `READ`, approve `APPROVE`, reject
 `REJECT`.
 
 ## Create — `POST /action/v1/action-proposals` → 201
 
-Body comes from the `ecombrain:action-catalog` skill. `scope` carries
+Body comes from the `commercespine:action-catalog` skill. `scope` carries
 `amazonAccountId`; `advertisingProfileId` and `marketplaceId` are optional and
 must match the account row when sent.
 

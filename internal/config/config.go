@@ -1,5 +1,5 @@
 // Package config holds the shared configuration and credential storage for the
-// Ecombrain plugin. Standard library only — no external dependencies.
+// Commerce Spine plugin. Standard library only — no external dependencies.
 package config
 
 import (
@@ -16,8 +16,8 @@ import (
 // Production endpoints. No environment variables are consulted for URLs (so a
 // stray/hostile env var can never redirect the bearer token to another host).
 const (
-	frontendURL = "https://ecombrain.sellerplex.com"
-	apiURL      = "https://eb-api.sellerplex.com/graphql"
+	frontendURL = "https://console.commercespine.com"
+	apiURL      = "https://api.commercespine.com/graphql"
 )
 
 // ---------------------------------------------------------------------------
@@ -45,13 +45,13 @@ type Credentials struct {
 // directory is frequently a checked-out repository.
 func dir() (string, error) {
 	if base := os.Getenv("XDG_CONFIG_HOME"); base != "" {
-		return filepath.Join(base, "ecombrain"), nil
+		return filepath.Join(base, "commercespine"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("could not determine your home directory; set XDG_CONFIG_HOME to choose where the Ecombrain token is stored: %w", err)
+		return "", fmt.Errorf("could not determine your home directory; set XDG_CONFIG_HOME to choose where the Commerce Spine token is stored: %w", err)
 	}
-	return filepath.Join(home, ".config", "ecombrain"), nil
+	return filepath.Join(home, ".config", "commercespine"), nil
 }
 
 // CredentialsPath returns the full path to credentials.json.

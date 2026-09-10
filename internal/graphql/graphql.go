@@ -1,4 +1,4 @@
-// Package graphql executes read-only queries against the Ecombrain Data Layer.
+// Package graphql executes read-only queries against the Commerce Spine Data Layer.
 // Shared by the `gql` subcommand and the post-login token verification step.
 package graphql
 
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/config"
+	"github.com/WeBuildAgents/commercespine-claude-plugin/internal/config"
 )
 
 // PingQuery confirms a token actually works after login.
@@ -54,7 +54,7 @@ func assertReadOnly(query string) error {
 	stripped = stringRe.ReplaceAllString(stripped, `""`)
 	stripped = commentRe.ReplaceAllString(stripped, "")
 	if writeOpRe.MatchString(stripped) {
-		return &RequestError{msg: "Refusing to run: the Ecombrain Data Layer is read-only. " +
+		return &RequestError{msg: "Refusing to run: the Commerce Spine Data Layer is read-only. " +
 			"Only GraphQL queries are permitted (no mutation/subscription)."}
 	}
 	return nil
@@ -115,7 +115,7 @@ func Execute(query string, variables map[string]any) (json.RawMessage, error) {
 		return nil, &RequestError{msg: err.Error()}
 	}
 	if token == "" {
-		return nil, &AuthError{msg: "No Ecombrain token found. Run /ecombrain:login to authenticate."}
+		return nil, &AuthError{msg: "No Commerce Spine token found. Run /commercespine:login to authenticate."}
 	}
 
 	if variables == nil {
@@ -137,18 +137,18 @@ func Execute(query string, variables map[string]any) (json.RawMessage, error) {
 	client := &http.Client{Timeout: 60 * time.Second}
 	res, err := client.Do(req)
 	if err != nil {
-		return nil, &RequestError{msg: fmt.Sprintf("Could not reach the Ecombrain API at %s: %v", url, err)}
+		return nil, &RequestError{msg: fmt.Sprintf("Could not reach the Commerce Spine API at %s: %v", url, err)}
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusUnauthorized || res.StatusCode == http.StatusForbidden {
-		return nil, &AuthError{msg: "Ecombrain rejected the stored token (unauthenticated). " +
-			"Run /ecombrain:login to sign in again."}
+		return nil, &AuthError{msg: "Commerce Spine rejected the stored token (unauthenticated). " +
+			"Run /commercespine:login to sign in again."}
 	}
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, &RequestError{msg: "Could not read the Ecombrain API response: " + err.Error()}
+		return nil, &RequestError{msg: "Could not read the Commerce Spine API response: " + err.Error()}
 	}
 
 	var parsed gqlResponse
@@ -158,7 +158,7 @@ func Execute(query string, variables map[string]any) (json.RawMessage, error) {
 			snippet = snippet[:500]
 		}
 		return nil, &RequestError{
-			msg:     fmt.Sprintf("Ecombrain API returned a non-JSON response (HTTP %d).", res.StatusCode),
+			msg:     fmt.Sprintf("Commerce Spine API returned a non-JSON response (HTTP %d).", res.StatusCode),
 			Details: snippet,
 		}
 	}
@@ -166,8 +166,8 @@ func Execute(query string, variables map[string]any) (json.RawMessage, error) {
 	if len(parsed.Errors) > 0 {
 		// Surface an auth error hidden inside a 200 GraphQL error, too.
 		if isAuthError(parsed.Errors) {
-			return nil, &AuthError{msg: "Ecombrain rejected the stored token. " +
-				"Run /ecombrain:login to sign in again.\n" + joinMessages(parsed.Errors)}
+			return nil, &AuthError{msg: "Commerce Spine rejected the stored token. " +
+				"Run /commercespine:login to sign in again.\n" + joinMessages(parsed.Errors)}
 		}
 		return nil, &RequestError{
 			msg:     "GraphQL returned errors:\n" + joinMessages(parsed.Errors),

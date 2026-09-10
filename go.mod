@@ -1,4 +1,4 @@
-module github.com/WeBuildAgents/ecombrain-claude-plugin
+module github.com/WeBuildAgents/commercespine-claude-plugin
 
 go 1.24
 

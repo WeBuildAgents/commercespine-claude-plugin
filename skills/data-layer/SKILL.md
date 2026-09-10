@@ -1,11 +1,11 @@
 ---
-description: Query the Ecombrain Data Layer (read-only Amazon ads + retail GraphQL API) to answer questions about the user's account, product/ASIN, campaign, keyword, search-term, product-target, and advertised-product performance — impressions, clicks, spend, sales, ACOS/ROAS and other KPIs — plus current FBA/merchant inventory levels, stock coverage and restock recommendations, Seller Central listings, Brand Analytics search data, and product costs. Use whenever the user asks for Amazon advertising, sales, inventory, or listing data, metrics, rankings, or trends from their Ecombrain account.
+description: Query the Commerce Spine Data Layer (read-only Amazon ads + retail GraphQL API) to answer questions about the user's account, product/ASIN, campaign, keyword, search-term, product-target, and advertised-product performance — impressions, clicks, spend, sales, ACOS/ROAS and other KPIs — plus current FBA/merchant inventory levels, stock coverage and restock recommendations, Seller Central listings, Brand Analytics search data, and product costs. Use whenever the user asks for Amazon advertising, sales, inventory, or listing data, metrics, rankings, or trends from their Commerce Spine account.
 ---
 
-# Ecombrain Data Layer
+# Commerce Spine Data Layer
 
 Answer the user's Amazon performance questions by running **read-only** GraphQL
-queries against the Ecombrain Data Layer with the `ecombrain-gql` command. Only
+queries against the Commerce Spine Data Layer with the `commercespine-gql` command. Only
 queries are allowed — never mutations or subscriptions.
 
 ## The schema is discovered, not memorized
@@ -25,14 +25,14 @@ server-side), and do not assume the entity list from a previous session.
 
 ## Workflow
 
-1. **Ensure a token exists.** If unsure, run `ecombrain-config`. If no token,
-   tell the user to run `/ecombrain:login` and stop until connected.
+1. **Ensure a token exists.** If unsure, run `commercespine-config`. If no token,
+   tell the user to run `/commercespine:login` and stop until connected.
 
 2. **List the entities — always, before anything else.** This is cheap (~2 KB)
    and tells you what exists right now:
 
    ```bash
-   ecombrain-gql --query '{ dataCatalog { entity description layer queryable dateField } }'
+   commercespine-gql --query '{ dataCatalog { entity description layer queryable dateField } }'
    ```
 
    Read the descriptions and pick the entity whose grain matches the question.
@@ -42,7 +42,7 @@ server-side), and do not assume the entity list from a previous session.
 3. **Fetch that entity's fields** (~4 KB each — only the ones you need):
 
    ```bash
-   ecombrain-gql --query '{ dataAsset(asset: "campaignPerformance") {
+   commercespine-gql --query '{ dataAsset(asset: "campaignPerformance") {
      entity description layer dataset table accountField dateField queryable
      fields { name type filterable groupable sortable aggregatable } } }'
    ```
@@ -84,10 +84,10 @@ server-side), and do not assume the entity list from a previous session.
 7. **Run it:**
 
    ```bash
-   ecombrain-gql --query '<gql>' --variables '<json>'
+   commercespine-gql --query '<gql>' --variables '<json>'
    ```
 
-   or pipe the query on stdin: `echo '<gql>' | ecombrain-gql`.
+   or pipe the query on stdin: `echo '<gql>' | commercespine-gql`.
 
 8. **Paginate** when needed: request `pageInfo { hasNextPage endCursor }`, then
    pass `pagination.after = endCursor` until `hasNextPage` is false or you have
@@ -107,11 +107,11 @@ server-side), and do not assume the entity list from a previous session.
 ## Example — list what's available, then drill in
 
 ```bash
-ecombrain-gql --query '{ dataCatalog { entity description layer queryable } }'
+commercespine-gql --query '{ dataCatalog { entity description layer queryable } }'
 ```
 
 ```bash
-ecombrain-gql --query '{ amazonAccounts { id storeName marketplaceName countryCode currencyCode isActive } }'
+commercespine-gql --query '{ amazonAccounts { id storeName marketplaceName countryCode currencyCode isActive } }'
 ```
 
 Full worked example (catalog → fields → query) is §7 of
@@ -120,17 +120,17 @@ Full worked example (catalog → fields → query) is §7 of
 ## Handling errors
 
 - **Exit code 2 (authentication):** token missing or rejected → tell the user to
-  run `/ecombrain:login`, then retry. (See the `ecombrain:authentication` skill.)
+  run `/commercespine:login`, then retry. (See the `commercespine:authentication` skill.)
 - **GraphQL errors (exit 1):** read stderr and match it against the error table
   in §8 of [`reference.md`](reference.md). Most are a non-filterable field in
   `where`, a `Decimal` filter passed as a number, or `dateRange` on a snapshot
   entity. Re-run `dataAsset` for the entity rather than guessing a correction.
 - **Unreachable API:** for local dev, confirm the GraphQL server (see
-  `ecombrain-config` for the URL) is running.
+  `commercespine-config` for the URL) is running.
 
 ## Guardrails
 
-- Read-only only: never write `mutation`/`subscription` — `ecombrain-gql` refuses
+- Read-only only: never write `mutation`/`subscription` — `commercespine-gql` refuses
   them anyway.
 - Never print or ask the user for the raw token.
 - Keep `pagination.first` ≤ 500 and select only the fields you need (queries are

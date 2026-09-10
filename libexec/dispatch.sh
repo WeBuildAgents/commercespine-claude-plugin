@@ -1,5 +1,5 @@
 #!/bin/sh
-# Shared dispatcher: exec the native ecombrain binary for this OS/arch.
+# Shared dispatcher: exec the native commercespine binary for this OS/arch.
 #
 # Invoked by the thin wrappers in bin/ as:
 #   libexec/dispatch.sh <subcommand> [args...]
@@ -32,21 +32,21 @@ case "$(uname -s)" in
   Darwin) os=darwin ;;
   Linux)  os=linux ;;
   MINGW*|MSYS*|CYGWIN*) os=windows ;;
-  *) echo "ecombrain: unsupported operating system: $(uname -s)" >&2; exit 1 ;;
+  *) echo "commercespine: unsupported operating system: $(uname -s)" >&2; exit 1 ;;
 esac
 
 case "$(uname -m)" in
   arm64|aarch64) arch=arm64 ;;
   x86_64|amd64)  arch=amd64 ;;
-  *) echo "ecombrain: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+  *) echo "commercespine: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
 esac
 
-exe="$LIBEXEC/ecombrain-$os-$arch"
+exe="$LIBEXEC/commercespine-$os-$arch"
 [ "$os" = windows ] && exe="$exe.exe"
 
 if [ ! -x "$exe" ]; then
-  echo "ecombrain: no bundled binary for $os/$arch (looked for $exe)." >&2
-  echo "ecombrain: please report this to your Ecombrain onboarding contact." >&2
+  echo "commercespine: no bundled binary for $os/$arch (looked for $exe)." >&2
+  echo "commercespine: please report this to your Commerce Spine onboarding contact." >&2
   exit 1
 fi
 

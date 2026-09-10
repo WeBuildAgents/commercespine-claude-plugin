@@ -1,9 +1,9 @@
-# Ecombrain — Claude plugin
+# Commerce Spine — Claude plugin
 
-Gives Claude access to your Ecombrain account: **read-only** queries against the
+Gives Claude access to your Commerce Spine account: **read-only** queries against the
 Data Layer (Amazon ads, retail and inventory data) over GraphQL, plus the Action
 Layer, where Claude can propose, review and approve Amazon Ads changes.
-Authenticate once with `/ecombrain:login`.
+Authenticate once with `/commercespine:login`.
 
 **Approving an Action Layer proposal enqueues a real change against your live
 Amazon Ads account.** Creating and listing proposals changes nothing; only
@@ -57,7 +57,7 @@ needed and every build produces the same OS floors. Cross-compiles every target
 from any one machine:
 
 ```bash
-./scripts/build.sh 0.4.0
+./scripts/build.sh 0.5.0
 ```
 
 Binaries are committed to `libexec/` so the plugin works straight from a clone,
@@ -70,11 +70,11 @@ This repo is both a Claude plugin **and** its marketplace. Install in two steps.
 ### Claude Code (terminal)
 
 ```bash
-/plugin marketplace add WeBuildAgents/ecombrain-claude-plugin
+/plugin marketplace add WeBuildAgents/commercespine-claude-plugin
 ```
 
 ```bash
-/plugin install ecombrain@ecombrain-marketplace
+/plugin install commercespine@commercespine-marketplace
 ```
 
 Then reload if needed and sign in:
@@ -84,34 +84,34 @@ Then reload if needed and sign in:
 ```
 
 ```bash
-/ecombrain:login
+/commercespine:login
 ```
 
 ### Claude Desktop app
 
 If your app version exposes the `/plugin` command, use the same commands above.
 Otherwise add the marketplace through the app's **plugins / marketplace settings
-UI** using the repo `WeBuildAgents/ecombrain-claude-plugin`, enable **ecombrain**,
-then run `/ecombrain:login`.
+UI** using the repo `WeBuildAgents/commercespine-claude-plugin`, enable **commercespine**,
+then run `/commercespine:login`.
 
 ### Updating
 
 ```bash
-/plugin update ecombrain
+/plugin update commercespine
 ```
 
 New versions ship when `version` in `.claude-plugin/plugin.json` is bumped.
 
 ### Verify
 
-After installing, `/ecombrain:login` appears in the `/` menu and the
-`ecombrain:data-layer` / `ecombrain:authentication` skills load automatically.
-Check status any time by asking Claude to run `ecombrain-config`.
+After installing, `/commercespine:login` appears in the `/` menu and the
+`commercespine:data-layer` / `commercespine:authentication` skills load automatically.
+Check status any time by asking Claude to run `commercespine-config`.
 
 ## How authentication works
 
-1. `/ecombrain:login` runs `ecombrain-login`, which starts a loopback-only HTTP
-   server on an ephemeral port and opens your browser to the Ecombrain frontend
+1. `/commercespine:login` runs `commercespine-login`, which starts a loopback-only HTTP
+   server on an ephemeral port and opens your browser to the Commerce Spine frontend
    `/connect` handoff, passing a `callback_url` and a random `state` nonce.
 2. You sign in and create an API token.
 3. The frontend redirects back to
@@ -121,7 +121,7 @@ Check status any time by asking Claude to run `ecombrain-config`.
    **POSTs** the values back to `127.0.0.1` as a JSON body — never as a query
    string, so the token never enters browser history either.
 4. The command validates the `state`, stores the token at
-   `~/.config/ecombrain/credentials.json` (mode `0600`), and verifies it with an
+   `~/.config/commercespine/credentials.json` (mode `0600`), and verifies it with an
    auth-gated query. Exit `2` means the token was rejected; exit `1` means the
    check could not be completed (e.g. no network).
 
@@ -131,7 +131,7 @@ Every GraphQL request then sends `Authorization: Bearer <token>`.
 
 | Skill | Invocation | Purpose |
 | --- | --- | --- |
-| `login` | `/ecombrain:login` | Browser sign-in + token capture/storage |
+| `login` | `/commercespine:login` | Browser sign-in + token capture/storage |
 | `authentication` | model-invoked | Explains auth/token status and re-login recovery |
 | `data-layer` | model-invoked | Runs read-only GraphQL queries, discovering the schema from the API's own `dataCatalog` |
 | `action-catalog` | model-invoked | Reads the live `/action/v1/action-catalog` to map a change to a published action key |
@@ -142,11 +142,11 @@ Every GraphQL request then sends `Authorization: Bearer <token>`.
 Each is a wrapper that execs `libexec/dispatch.sh`, which in turn execs the
 platform binary.
 
-- `ecombrain-login` — run the auth flow and store a token.
-- `ecombrain-gql --query '<gql>' [--variables '<json>']` — run a read-only query
+- `commercespine-login` — run the auth flow and store a token.
+- `commercespine-gql --query '<gql>' [--variables '<json>']` — run a read-only query
   (also accepts a query on stdin). Exit code `2` means an authentication problem
   (re-run login).
-- `ecombrain-config [--json]` — show resolved URLs and token status (never prints
+- `commercespine-config [--json]` — show resolved URLs and token status (never prints
   the token).
 
 ## Configuration
@@ -156,14 +156,14 @@ The plugin talks to exactly two endpoints, hardcoded in
 
 | Constant | Endpoint |
 | --- | --- |
-| `frontendURL` | `https://ecombrain.sellerplex.com` (sign-in / `/connect` handoff) |
-| `apiURL` | `https://eb-api.sellerplex.com/graphql` (read-only Data Layer) |
+| `frontendURL` | `https://console.commercespine.com` (sign-in / `/connect` handoff) |
+| `apiURL` | `https://api.commercespine.com/graphql` (read-only Data Layer) |
 
 **No environment variables are consulted for URLs** and no URL config file is
 read — so a stray or hostile env var can never redirect the bearer token to
 another host. To target a different environment, edit those two constants and rebuild.
 
-`~/.config/ecombrain/` holds **only** `credentials.json` (the stored token). On
+`~/.config/commercespine/` holds **only** `credentials.json` (the stored token). On
 macOS and Linux the file and its directory are created `0600`/`0700` and that is
 guaranteed. On Windows, NTFS ignores those mode bits, so the plugin additionally
 resets inherited ACLs with `icacls` — but that step is **best effort**: it is
@@ -173,10 +173,10 @@ If no config directory can be determined at all (no `HOME`, no
 `XDG_CONFIG_HOME`), the commands fail with a clear error and write nothing —
 a token is never placed in the current working directory as a fallback.
 
-Check the resolved values any time with `ecombrain-config` (it never prints the
+Check the resolved values any time with `commercespine-config` (it never prints the
 token).
 
-- `ECOMBRAIN_NO_BROWSER=1` (or `ecombrain-login --no-browser`) skips opening a
+- `COMMERCESPINE_NO_BROWSER=1` (or `commercespine-login --no-browser`) skips opening a
   browser and prints the connect URL instead, for headless/CI testing. It has no
   effect on URLs or the token. Note this does **not** make login work over SSH:
   the callback still has to reach this host's `127.0.0.1`.
@@ -199,11 +199,11 @@ token).
 ## Privacy & data handling
 
 - The plugin runs entirely on your machine. It sends your API token only to
-  `https://eb-api.sellerplex.com/graphql`, as an `Authorization: Bearer` header.
-- Your token is stored locally at `~/.config/ecombrain/credentials.json`,
+  `https://api.commercespine.com/graphql`, as an `Authorization: Bearer` header.
+- Your token is stored locally at `~/.config/commercespine/credentials.json`,
   restricted to your user account. It is never printed, logged, or transmitted
   anywhere else.
-- All **GraphQL** access is read-only; `ecombrain-gql` refuses mutations and
+- All **GraphQL** access is read-only; `commercespine-gql` refuses mutations and
   subscriptions.
 - The **Action Layer** (`/action/v1`) is the one write path. Approving a
   proposal enqueues a real Amazon Ads change; creating or listing one does not.
@@ -217,13 +217,13 @@ token).
   `metadata.version` and the plugin entry's `version` in
   `.claude-plugin/marketplace.json`.
 - **Rebuild the binaries at the new version** and commit them — skipping this
-  ships binaries whose `ecombrain version` disagrees with the manifest:
+  ships binaries whose `commercespine version` disagrees with the manifest:
   ```bash
-  ./scripts/build.sh 0.4.0
+  ./scripts/build.sh 0.5.0
   ```
 - Validate both manifests:
   ```bash
   claude plugin validate .claude-plugin/plugin.json
   claude plugin validate .claude-plugin/marketplace.json
   ```
-- Push to `main`. Users pick up the new version with `/plugin update ecombrain`.
+- Push to `main`. Users pick up the new version with `/plugin update commercespine`.

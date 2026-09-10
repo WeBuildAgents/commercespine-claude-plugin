@@ -1,7 +1,7 @@
-// Command ecombrain provides the Ecombrain Claude plugin's local commands.
+// Command commercespine provides the Commerce Spine Claude plugin's local commands.
 //
 // It is a single binary with three subcommands. The bin/ shims invoke it as
-// `ecombrain login`, `ecombrain gql`, and `ecombrain config`.
+// `commercespine login`, `commercespine gql`, and `commercespine config`.
 //
 // Exit codes:
 //
@@ -19,14 +19,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/config"
-	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/graphql"
-	"github.com/WeBuildAgents/ecombrain-claude-plugin/internal/login"
+	"github.com/WeBuildAgents/commercespine-claude-plugin/internal/config"
+	"github.com/WeBuildAgents/commercespine-claude-plugin/internal/graphql"
+	"github.com/WeBuildAgents/commercespine-claude-plugin/internal/login"
 )
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "Usage: ecombrain <login|gql|config|version> [options]")
+		fmt.Fprintln(os.Stderr, "Usage: commercespine <login|gql|config|version> [options]")
 		os.Exit(1)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
@@ -41,7 +41,7 @@ func main() {
 		fmt.Println(version)
 		os.Exit(0)
 	default:
-		fmt.Fprintf(os.Stderr, "Usage: ecombrain <login|gql|config|version> [options]\n")
+		fmt.Fprintf(os.Stderr, "Usage: commercespine <login|gql|config|version> [options]\n")
 		os.Exit(1)
 	}
 }
@@ -64,8 +64,8 @@ func runGQL(args []string) int {
 				variablesRaw = args[i]
 			}
 		case "--help", "-h":
-			fmt.Println("Usage: ecombrain-gql --query '<gql>' [--variables '<json>']")
-			fmt.Println("       echo '<gql>' | ecombrain-gql")
+			fmt.Println("Usage: commercespine-gql --query '<gql>' [--variables '<json>']")
+			fmt.Println("       echo '<gql>' | commercespine-gql")
 			return 0
 		}
 	}
@@ -134,7 +134,7 @@ func runConfig(args []string) int {
 			asJSON = true
 		}
 		if a == "--help" || a == "-h" {
-			fmt.Println("Usage: ecombrain-config [--json]")
+			fmt.Println("Usage: commercespine-config [--json]")
 			return 0
 		}
 	}
@@ -174,8 +174,8 @@ func runConfig(args []string) int {
 	}
 
 	lines := []string{
-		"Ecombrain plugin configuration",
-		"------------------------------",
+		"Commerce Spine plugin configuration",
+		"-----------------------------------",
 		"Frontend URL:      " + config.FrontendURL(),
 		"API URL:           " + config.APIURL(),
 		"Credentials file:  " + credsPath,
@@ -189,7 +189,7 @@ func runConfig(args []string) int {
 	} else {
 		lines = append(lines,
 			"Token present:     no",
-			"Next step:         run /ecombrain:login to authenticate.",
+			"Next step:         run /commercespine:login to authenticate.",
 		)
 	}
 	fmt.Println(strings.Join(lines, "\n"))

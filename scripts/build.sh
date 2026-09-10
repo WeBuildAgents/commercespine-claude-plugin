@@ -1,5 +1,5 @@
 #!/bin/sh
-# Cross-compile the ecombrain binary for every supported platform.
+# Cross-compile the commercespine binary for every supported platform.
 #
 # CGO_ENABLED=0 is the important part: it produces a fully static binary with no
 # libc dependency, so one Linux build runs on glibc (Debian/Ubuntu/RHEL) *and*
@@ -24,18 +24,18 @@ windows/arm64
 "
 
 mkdir -p "$OUT"
-rm -f "$OUT"/ecombrain-*
+rm -f "$OUT"/commercespine-*
 
-echo "Building ecombrain $VERSION"
+echo "Building commercespine $VERSION"
 for target in $TARGETS; do
   GOOS="${target%/*}"
   GOARCH="${target#*/}"
-  name="ecombrain-$GOOS-$GOARCH"
+  name="commercespine-$GOOS-$GOARCH"
   [ "$GOOS" = "windows" ] && name="$name.exe"
 
   CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
     go build -trimpath -ldflags "-s -w -X main.version=$VERSION" \
-    -o "$OUT/$name" "$ROOT/cmd/ecombrain"
+    -o "$OUT/$name" "$ROOT/cmd/commercespine"
 
   chmod 0755 "$OUT/$name"
   size=$(du -h "$OUT/$name" | cut -f1 | tr -d ' ')
