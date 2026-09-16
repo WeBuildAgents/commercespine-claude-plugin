@@ -61,18 +61,27 @@ because it proposes actions the server will reject or that have changed meaning.
 Using only the rows you just loaded:
 
 1. pick one object type present in the response;
-2. pick one or more actions published for it that share the same target;
-3. quote the row's key back to the user.
+2. pick the published action(s) that match the intent;
+3. quote the row's key back to the user;
+4. choose the proposal shape:
 
-Same target + several actions → one proposal listing several actions.
-Different targets → separate proposals.
+| Intent | Shape |
+|---|---|
+| Same target + several actions | One **per-item** proposal (`actions[]` + matching `items[]`, proposal-level `target`) |
+| Same published **update** action + N distinct ids | One **`provider_batch`** proposal (omit proposal-level `target`; each item has its own `target`; `executionMode: "provider_batch"`; `actions` length 1; max 1000) |
+| Mixed actions, create/remove across many targets, or different operations | Separate proposals (or refuse that mix in one body) |
 
 No matching row means refuse — and say which object types *are* published.
 Absence from the catalog is the refusal; do not keep a separate denylist.
 
+Do **not** keep a local allowlist of which keys are valid for bulk. If create
+later returns `400 VALIDATION_ERROR` with `details.reason` about
+`provider_batch`, quote it and split or drop the illegal items.
+
 ## 3. Resolve the target
 
-The proposal's `target` accepts a fixed set of id fields:
+The proposal's `target` (proposal-level or per item) accepts a fixed set of id
+fields:
 
 `campaignId`, `adGroupId`, `keywordId`, `targetId`, `productAdId`,
 `negativeKeywordId`, `negativeTargetId`
@@ -82,7 +91,9 @@ being created — the provider assigns it — but still needs its parent ids.
 
 Resolve real ids from the Data Layer before using them:
 [`references/data-layer-ids.md`](references/data-layer-ids.md). Never put an id
-on `target` that you have not seen in a Data Layer row.
+on `target` that you have not seen in a Data Layer row. For bulk, resolve
+**every** target id (and current values for bid/budget preconditions) the same
+way.
 
 ## 4. Learn the parameters — from live data, not from memory
 
@@ -111,7 +122,8 @@ shape is accepted and fails later at the adapter. So discover the shape:
 Regardless of source:
 
 - the action you send must be one the catalog published for that entity;
-- the actions list must match the items in order;
+- for per-item, the actions list must match the items in order;
+- for bulk, every item shares that one action;
 - schema version and ad product come from the catalog row you loaded;
 - money is `{ "amount": "<string>", "currency": "<ISO>" }`;
 - bid and budget changes should carry `preconditions.expected` holding the
@@ -119,7 +131,7 @@ Regardless of source:
 - never send Amazon SP SDK envelopes — the catalog's own parameter form is
   canonical.
 
-Shape handed to the proposals skill:
+### Per-item handoff
 
 ```json
 {
@@ -139,6 +151,29 @@ Shape handed to the proposals skill:
 }
 ```
 
+### Bulk handoff (`provider_batch`)
+
+Omit proposal-level `target`. Put each resolved id on `items[].target`.
+
+```json
+{
+  "entity": "<from catalog row>",
+  "actions": ["<from catalog row>"],
+  "executionMode": "provider_batch",
+  "scope": { "amazonAccountId": "<id>" },
+  "adProduct": "<from catalog row>",
+  "items": [
+    {
+      "action": "<from catalog row>",
+      "actionSchemaVersion": "<from catalog row>",
+      "parameters": { },
+      "target": { "<idField>": "<id from the Data Layer>" },
+      "preconditions": { "expected": { } }
+    }
+  ]
+}
+```
+
 ## 5. Refuse
 
 Stop when:
@@ -147,7 +182,9 @@ Stop when:
 - the catalog call failed — report it rather than working from memory;
 - you are handed a raw Amazon SP payload or an Ads console URL;
 - the ask is a GraphQL mutation — the Data Layer is read-only;
-- it is a bulk batch across many targets.
+- the ask mixes different catalog actions, or create/remove, across many
+  targets in one body — split into separate proposals instead of inventing a
+  bulk shape the API will reject.
 
 The server also enforces policy blocks on published keys (large budget and bid
 increases are rejected with `ACTION_NOT_SUPPORTED_BY_POLICY`), and may return a
@@ -157,10 +194,11 @@ rather than predicting it.
 ## Output
 
 1. **Catalog key** — the key plus the metadata from its row
-2. **Target** — id field, the Data Layer query used, the resolved id
-3. **Parameters** — the values and where the shape came from (prior proposal id,
+2. **Shape** — per-item or `provider_batch`, and why
+3. **Target(s)** — id field(s), the Data Layer query used, the resolved id(s)
+4. **Parameters** — the values and where the shape came from (prior proposal id,
    or the user)
-4. **Blockers** — anything unresolved and what you need
+5. **Blockers** — anything unresolved and what you need
 
 Then hand off to `commercespine:action-proposals`.
 

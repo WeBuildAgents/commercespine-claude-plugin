@@ -17,6 +17,8 @@ must match the account row when sent.
 Every value marked `<from catalog>` is copied off the catalog row you loaded —
 never hardcoded here.
 
+### Per-item (one target, one or more actions)
+
 ```json
 {
   "entity": "<from catalog>",
@@ -35,6 +37,40 @@ never hardcoded here.
 }
 ```
 
+### Bulk `provider_batch` (same safe-update, N distinct targets)
+
+Omit proposal-level `target`. Set `executionMode: "provider_batch"` (or omit it
+— the API infers bulk when there is no proposal `target` and every item has a
+distinct non-empty target id). `actions` length is 1; each item carries its own
+`target`; max 1000 items. Create/remove and mixed actions are rejected with
+`400 VALIDATION_ERROR` (`details.reason`).
+
+```json
+{
+  "entity": "keyword",
+  "actions": ["update_status"],
+  "executionMode": "provider_batch",
+  "scope": { "amazonAccountId": "<accountId>" },
+  "adProduct": "SPONSORED_PRODUCTS",
+  "items": [
+    {
+      "action": "update_status",
+      "actionSchemaVersion": "1.0",
+      "parameters": { "state": "PAUSED" },
+      "target": { "keywordId": "111" },
+      "preconditions": { "expected": { "state": "ENABLED" } }
+    },
+    {
+      "action": "update_status",
+      "actionSchemaVersion": "1.0",
+      "parameters": { "state": "PAUSED" },
+      "target": { "keywordId": "222" },
+      "preconditions": { "expected": { "state": "ENABLED" } }
+    }
+  ]
+}
+```
+
 Response is the proposal object, **not** wrapped in `data`:
 
 ```json
@@ -43,17 +79,22 @@ Response is the proposal object, **not** wrapped in `data`:
   "proposalStatus": "PENDING_APPROVAL",
   "entity": "<echoed back>",
   "actions": ["<echoed back>"],
+  "executionMode": "per_item",
   "scope": {
     "amazonAccountId": "amz_1",
     "advertisingProfileId": "1234567890",
     "marketplaceId": "ATVPDKIKX0DER"
   },
-  "targetId": null,
+  "targetId": "987654321",
+  "itemCount": 2,
   "riskLevel": "HIGH",
   "validFromAt": "2026-08-27T15:00:00Z",
   "expiresAt": "2026-08-28T15:00:00Z"
 }
 ```
+
+On `provider_batch`, `targetId` is `null` and `itemCount` is N.
+`executionMode` is always present on create, list, and GET.
 
 `expiresAt` applies to `PENDING_APPROVAL` only (default 24h).
 
@@ -61,13 +102,18 @@ Response is the proposal object, **not** wrapped in `data`:
 wrong parameter shape and fail later at the adapter. Learn a key's parameter
 fields from a previous proposal for that key (see below), not from memory.
 
+Do not PATCH a `provider_batch` proposal — the API returns `400 VALIDATION_ERROR`
+with `details.reason=provider_batch proposals cannot be patched in V1`. Create a
+new proposal instead.
+
 ## Reading a stored item — `GET /action/v1/action-proposals/{proposalId}`
 
 The GET returns items as stored **typed columns**, not in the shape you posted:
-snake_case names, money split into separate amount and currency columns, unused
-columns present as `null`, and free-form extras in `*_jsonb` fields. Use it to
-learn which fields a given action actually populates, then translate back into
-the nested camelCase `parameters` form when you create.
+snake_case names (`target_id` on each item row), money split into separate
+amount and currency columns, unused columns present as `null`, and free-form
+extras in `*_jsonb` fields. Use it to learn which fields a given action
+actually populates, then translate back into the nested camelCase `parameters`
+form when you create.
 
 ## List — `GET /action/v1/action-proposals[?status=…]` → 200
 
@@ -86,6 +132,7 @@ a catalog.
       "proposalStatus": "FAILED",
       "entity": "campaign",
       "actions": ["create"],
+      "executionMode": "per_item",
       "amazonAccountId": "amz_console_account_1",
       "riskLevel": "HIGH",
       "validFromAt": "2026-08-19T17:04:50.701Z",
@@ -103,14 +150,50 @@ a catalog.
 `attemptCount > 1` means the worker retried — worth mentioning when reporting a
 `FAILED` proposal.
 
-## Get — `GET /action/v1/action-proposals/{proposalId}` → 200
+## Get / poll — `GET /action/v1/action-proposals/{proposalId}` → 200
+
+`{ "data": { … } }` always includes `executionMode`, `attemptCount`, and
+`latestAttempt` (`null` until the worker records an attempt):
 
 ```json
-{ "data": { "proposalId": "prop_123", "proposalStatus": "PENDING_APPROVAL", "entity": "campaign", "actions": ["create"], "items": [] } }
+{
+  "data": {
+    "proposalId": "prop_123",
+    "proposalStatus": "FAILED",
+    "entity": "campaign",
+    "actions": ["update_budget"],
+    "executionMode": "per_item",
+    "amazonAccountId": "amz_1",
+    "riskLevel": "MEDIUM",
+    "attemptCount": 1,
+    "latestAttempt": {
+      "attemptNumber": 1,
+      "startedAt": "2026-09-09T00:00:00.000Z",
+      "finishedAt": "2026-09-09T00:00:01.000Z",
+      "durationMs": 1000,
+      "providerRequestId": "rid-9",
+      "providerHttpStatus": 429,
+      "confirmationSource": null,
+      "providerAcceptedAt": null,
+      "outcomeCertainty": "CERTAIN",
+      "error": {
+        "message": "throttled; retry-after=30",
+        "reason": null,
+        "catalogKey": null,
+        "certainty": "CERTAIN",
+        "retryable": true
+      }
+    },
+    "items": []
+  }
+}
 ```
 
-Status after approve: `QUEUED` → `RUNNING` → `SUCCEEDED` | `FAILED`, or
-`UNKNOWN`.
+Status after approve: `QUEUED` → `RUNNING` → `SUCCEEDED` | `FAILED` | `UNKNOWN`.
+
+`error` keys are exactly `message`, `reason`, `catalogKey`, `certainty`,
+`retryable`. How to interpret them:
+[`run-errors.md`](run-errors.md).
 
 ## Approve — `POST .../{proposalId}/approve` → 202
 
@@ -119,6 +202,8 @@ Body `{ "reason": "<optional>" }`.
 ```json
 { "proposalId": "prop_123", "proposalStatus": "QUEUED", "statusUrl": "/action/v1/action-proposals/prop_123" }
 ```
+
+`202` is not success — poll `statusUrl` (GET by id) until a terminal status.
 
 ## Reject — `POST .../{proposalId}/reject` → 200/201
 
@@ -134,14 +219,19 @@ Body `{ "reason": "<optional>" }`.
 { "code": "<ErrorCode>", "message": "<human message>", "details": {}, "requestId": "req_123" }
 ```
 
-| HTTP | Code | Meaning |
+| HTTP | Code | Meaning / next |
 |---|---|---|
+| 400 | `VALIDATION_ERROR` | Shape, unpublished key, bulk rules, or PATCH of `provider_batch`. Read `details.reason`; fix the body; do not loop. |
 | 401 | `UNAUTHENTICATED` | no token, or a Console JWT on `/action/v1` |
-| 403 | `ACTION_LAYER_DISABLED` / `FORBIDDEN_SCOPE` | org plan gate, or the token's role lacks the capability |
+| 403 | `ACTION_LAYER_DISABLED` / `FORBIDDEN_SCOPE` / `FORBIDDEN_ACCOUNT_SCOPE` | org plan gate, missing capability, or account not on the token — stop |
 | 404 | `NOT_FOUND` | unknown `proposalId` in this org |
-| 409 | `TARGET_BUSY` / `STALE_PRECONDITION` / `CONFLICT` | another change in flight, expected value moved, or wrong status |
-| 410 | `PROPOSAL_EXPIRED` | past `expiresAt` — create a new proposal |
+| 409 | `TARGET_BUSY` | another PENDING/QUEUED/RUNNING proposal on the same target; on bulk, **any** of N. Wait or use that proposal — no partial insert |
+| 409 | `STALE_PRECONDITION` / `CONFLICT` | expected value moved, or wrong status — re-read current values / GET first |
+| 410 | `PROPOSAL_EXPIRED` | past `expiresAt` — create a new proposal; do not approve |
 | 422 | `ACTION_ACCOUNT_NOT_READY` / `ACTION_SCOPE_MISMATCH` / `ACTION_NOT_SUPPORTED_BY_POLICY` / `ACTION_KILL_SWITCH_ACTIVE` | do not resend the same body |
-| 429 | `RATE_LIMIT_EXCEEDED` | wait |
+| 429 | `RATE_LIMIT_EXCEEDED` / `DAILY_LIMIT_EXCEEDED` / `CONCURRENCY_LIMIT_EXCEEDED` | org quotas — wait; do not loop |
 
 Quote `requestId` when reporting a failure — it is the server-side trace handle.
+
+Run failures after approve (`latestAttempt.error`) are not this envelope — see
+[`run-errors.md`](run-errors.md).

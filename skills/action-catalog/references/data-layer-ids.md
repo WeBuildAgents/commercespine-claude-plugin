@@ -27,6 +27,11 @@ proposals need: grouping by keyword id nulls both the keyword text and the
 current bid. Read ids and current values from an **ungrouped** query over a
 single recent day; the L2 rows are already one per entity per day.
 
+**Bulk (`provider_batch`) needs every id.** Resolve each distinct target the same
+way — ungrouped Data Layer rows — and read current bid/budget values for
+`preconditions.expected` on every item. Do not invent or reuse an id you have
+not seen in a row for that target.
+
 **Two different things are called `targetId`.** The product-target id lives on
 the product-target entity. The search-term entity also exposes a `targetId`,
 which is a different concept — never use it as a product-target id.
