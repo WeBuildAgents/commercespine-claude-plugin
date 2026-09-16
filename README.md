@@ -57,7 +57,7 @@ needed and every build produces the same OS floors. Cross-compiles every target
 from any one machine:
 
 ```bash
-./scripts/build.sh 0.5.0
+./scripts/build.sh 0.5.1
 ```
 
 Binaries are committed to `libexec/` so the plugin works straight from a clone,
@@ -219,7 +219,7 @@ token).
 - **Rebuild the binaries at the new version** and commit them — skipping this
   ships binaries whose `commercespine version` disagrees with the manifest:
   ```bash
-  ./scripts/build.sh 0.5.0
+  ./scripts/build.sh 0.5.1
   ```
 - Validate both manifests:
   ```bash

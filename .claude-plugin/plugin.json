@@ -1,7 +1,7 @@
 {
   "name": "commercespine",
   "description": "Query the Commerce Spine Data Layer (read-only Amazon ads, retail and inventory data) and propose, review and approve Amazon Ads changes through the Action Layer. Authenticate once with /commercespine:login.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": {
     "name": "SellerPlex"
   },
